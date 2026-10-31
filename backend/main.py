@@ -3,16 +3,26 @@ from fastapi.middleware.cors import CORSMiddleware
 import os
 from dotenv import load_dotenv
 
+from memory_engine.database import init_db
+from memory_engine.routes import router as memory_router
+from memory_engine.config import memory_config
+
 load_dotenv()
 
+# Initialize Database tables and pgvector extension
+init_db()
+
 app = FastAPI(
-    title="Afterminds API",
-    description="Backend API service for Afterminds",
+    title="AFTERMIND API",
+    description="AI Memory Platform for Businesses - Persistent Memory & Semantic Search",
     version="1.0.0"
 )
 
 # CORS Middleware to allow requests from the Next.js frontend
-allowed_origins = os.getenv("ALLOWED_ORIGINS", "http://localhost:3000,http://127.0.0.1:3000").split(",")
+allowed_origins = os.getenv(
+    "ALLOWED_ORIGINS",
+    "http://localhost:3000,http://127.0.0.1:3000,http://localhost:8000,http://127.0.0.1:8000"
+).split(",")
 
 app.add_middleware(
     CORSMiddleware,
@@ -22,23 +32,24 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Mount Module 3 Memory Engine routes
+app.include_router(memory_router)
+
 @app.get("/")
 def read_root():
     return {
         "status": "online",
-        "service": "Afterminds Backend API",
+        "service": "AFTERMIND – AI Memory for Businesses",
+        "module": "Module 3: Connected Long-Term Memory & Semantic Search",
         "docs_url": "/docs"
     }
 
 @app.get("/health")
 def health_check():
-    return {"status": "healthy"}
-
-@app.get("/api/v1/hello")
-def hello():
     return {
-        "message": "Hello from Afterminds FastAPI backend!",
-        "version": "1.0.0"
+        "status": "healthy",
+        "database": "connected",
+        "vector_dim": memory_config.VECTOR_DIMENSION
     }
 
 if __name__ == "__main__":
