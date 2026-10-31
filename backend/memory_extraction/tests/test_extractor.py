@@ -143,3 +143,45 @@ def test_module3_payload_mapping():
 def test_blank_input_rejected():
     with pytest.raises(ValidationError):
         request("   ")
+def test_missing_memories_field():
+    fake = FakeLLM({"entities": []})
+    result = MemoryExtractor(fake).extract(request())
+    assert result.memories_count == 0
+
+
+def test_invalid_llm_response_type():
+    fake = FakeLLM("This is not JSON")
+    with pytest.raises(ExtractionError):
+        MemoryExtractor(fake).extract(request())
+
+
+def test_maximum_input_length():
+    from memory_extraction.config import settings
+
+    original_limit = settings.max_input_characters
+    try:
+        settings.max_input_characters = 10
+        with pytest.raises(ExtractionError):
+            MemoryExtractor(FakeLLM({"memories": [], "entities": []})).extract(
+                request("This text is longer than ten characters.")
+            )
+    finally:
+        settings.max_input_characters = original_limit
+
+
+def test_entity_deduplication_case_insensitive():
+    fake = FakeLLM({
+        "memories": [{
+            "memory_type": "general_info",
+            "title": "Company information",
+            "content": "Acme is the company.",
+            "confidence": 0.9,
+            "entities": [
+                {"entity_type": "company", "name": "Acme"},
+                {"entity_type": "company", "name": "ACME"}
+            ]
+        }],
+        "entities": []
+    })
+    result = MemoryExtractor(fake).extract(request())
+    assert len(result.entities) == 1
