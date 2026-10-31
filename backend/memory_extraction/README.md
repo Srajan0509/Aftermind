@@ -103,6 +103,50 @@ The response contains:
 
 Each memory contains `memory_type`, `title`, `content`, `person`, `company`, `project`, `deadline`, `confidence`, `tags`, `entities`, and `meta_info`.
 
+### Example response
+
+```json
+{
+  "company_id": "company-uuid",
+  "source_id": "registered-source-uuid",
+  "memories": [
+    {
+      "memory_type": "decision",
+      "title": "Frontend framework selected",
+      "content": "The team decided to use React for the frontend.",
+      "person": null,
+      "company": null,
+      "project": null,
+      "deadline": null,
+      "confidence": 0.94,
+      "tags": ["frontend", "react"],
+      "entities": [],
+      "meta_info": {}
+    }
+  ],
+  "entities": [],
+  "memories_count": 1,
+  "module3_payloads": [
+  {
+    "company_id": "company-uuid",
+    "source_id": "registered-source-uuid",
+    "project_id": null,
+    "author_id": null,
+    "memory_type": "decision",
+    "title": "Frontend framework selected",
+    "content": "The team decided to use React for the frontend.",
+    "status": "active",
+    "confidence": 0.94,
+    "tags": ["frontend", "react"],
+    "meta_info": {
+      "extraction_module": "module_2"
+    }
+  }
+],
+  "processing_status": "completed",
+  "generated_at": "2026-10-31T12:00:00Z",
+  "confidence_note": "Confidence is an LLM-estimated score, not a calibrated probability."
+}
 ## Module 3 integration
 
 The extraction endpoint does not write to the database. It returns ready-to-submit Module 3-compatible payloads in `module3_payloads`.
