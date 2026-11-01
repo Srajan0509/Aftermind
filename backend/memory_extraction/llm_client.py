@@ -1,6 +1,6 @@
-"""LLM client with auto-detection and fallback chain.
+﻿"""LLM client with auto-detection and fallback chain.
 
-Priority order: groq → openrouter → openai → gemini
+Priority order: groq â†’ openrouter â†’ openai â†’ gemini
 If LLM_PROVIDER is explicitly set and the key is present, that provider is used first.
 Otherwise, whichever keys are configured are tried in order.
 """
@@ -94,37 +94,63 @@ class LLMClient:
     # Provider implementations
     # ------------------------------------------------------------------ #
 
+    GROQ_FALLBACK_MODELS = (
+        "llama-3.3-70b-versatile",
+        "llama-3.1-8b-instant",
+        "openai/gpt-oss-120b",
+        "openai/gpt-oss-20b",
+    )
+
     def _groq(self, text: str, filename: str | None, source_type: str | None) -> dict[str, Any]:
         if not settings.groq_api_key:
             raise LLMConfigurationError("GROQ_API_KEY is not configured.")
-        model = settings.groq_model or "llama-3.3-70b-versatile"
-        payload = {
-            "model": model,
-            "temperature": 0,
-            "response_format": {"type": "json_object"},
-            "messages": [
-                {"role": "system", "content": SYSTEM_PROMPT},
-                {"role": "user", "content": build_user_prompt(text, filename, source_type)},
-            ],
-        }
-        try:
-            response = httpx.post(
-                "https://api.groq.com/openai/v1/chat/completions",
-                headers={"Authorization": f"Bearer {settings.groq_api_key}"},
-                json=payload,
-                timeout=settings.llm_timeout_seconds,
-            )
-            response.raise_for_status()
-            return self._extract_openai_content(response.json(), "Groq")
-        except LLMResponseError:
-            raise
-        except httpx.HTTPStatusError as exc:
-            raise LLMResponseError(
-                f"Groq API error {exc.response.status_code}: {exc.response.text[:300]}"
-            ) from exc
-        except httpx.HTTPError as exc:
-            raise LLMResponseError(f"Groq request failed: {exc}") from exc
 
+        # Configured model first, then fallbacks (deduplicated, order preserved).
+        candidates: list[str] = []
+        for m in (settings.groq_model, *self.GROQ_FALLBACK_MODELS):
+            if m and m not in candidates:
+                candidates.append(m)
+
+        last_error: str = ""
+        for model in candidates:
+            payload = {
+                "model": model,
+                "temperature": 0,
+                "response_format": {"type": "json_object"},
+                "messages": [
+                    {"role": "system", "content": SYSTEM_PROMPT},
+                    {"role": "user", "content": build_user_prompt(text, filename, source_type)},
+                ],
+            }
+            try:
+                response = httpx.post(
+                    "https://api.groq.com/openai/v1/chat/completions",
+                    headers={"Authorization": f"Bearer {settings.groq_api_key}"},
+                    json=payload,
+                    timeout=settings.llm_timeout_seconds,
+                )
+                response.raise_for_status()
+                return self._extract_openai_content(response.json(), "Groq")
+            except LLMResponseError:
+                raise
+            except httpx.HTTPStatusError as exc:
+                last_error = (
+                    f"Groq API error {exc.response.status_code}: {exc.response.text[:300]}"
+                )
+                body = exc.response.text
+                if exc.response.status_code in (400, 403, 404) and (
+                    "model_not_found" in body or "model_decommissioned" in body
+                ):
+                    logger.warning("Groq model '%s' unavailable; trying next fallback.", model)
+                    continue
+                raise LLMResponseError(last_error) from exc
+            except httpx.HTTPError as exc:
+                raise LLMResponseError(f"Groq request failed: {exc}") from exc
+
+        raise LLMResponseError(
+            f"No Groq model available for this API key (tried: {', '.join(candidates)}). "
+            f"Last error: {last_error}"
+        )
     def _openrouter(
         self, text: str, filename: str | None, source_type: str | None
     ) -> dict[str, Any]:
