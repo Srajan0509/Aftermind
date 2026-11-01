@@ -8,6 +8,7 @@ from memory_engine.routes import router as memory_router
 from memory_engine.config import memory_config
 from memory_extraction.routes import router as extraction_router
 from data_ingestion.routes import router as ingestion_router
+from commitment_tracker.routes import router as tracker_router
 
 load_dotenv()
 
@@ -36,17 +37,24 @@ app.add_middleware(
 
 # Mount Module 3 Memory Engine routes
 app.include_router(memory_router)
-# Mount Module 2 Intelligent Memory Extraction routes
-app.include_router(extraction_router)
 # Mount Module 1 Multi-Source AI Data Ingestion routes
 app.include_router(ingestion_router)
+# Mount Module 2 Intelligent Memory Extraction routes
+app.include_router(extraction_router)
+# Mount Module 4 Smart Commitment & Decision Tracker routes
+app.include_router(tracker_router)
 
 @app.get("/")
 def read_root():
     return {
         "status": "online",
-        "service": "AFTERMIND – AI Memory for Businesses",
-        "module": "Module 3: Connected Long-Term Memory & Semantic Search",
+        "service": "AFTERMIND - AI Memory for Businesses",
+        "modules": [
+            "Module 1: Multi-Source AI Data Ingestion",
+            "Module 2: Intelligent Memory Extraction",
+            "Module 3: Connected Long-Term Memory & Semantic Search",
+            "Module 4: Smart Commitment & Decision Tracker"
+        ],
         "docs_url": "/docs"
     }
 
