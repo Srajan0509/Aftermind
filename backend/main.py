@@ -6,6 +6,7 @@ from dotenv import load_dotenv
 from memory_engine.database import init_db
 from memory_engine.routes import router as memory_router
 from memory_engine.config import memory_config
+from memory_extraction.routes import router as extraction_router
 
 load_dotenv()
 
@@ -34,6 +35,8 @@ app.add_middleware(
 
 # Mount Module 3 Memory Engine routes
 app.include_router(memory_router)
+# Mount Module 2 Intelligent Memory Extraction routes
+app.include_router(extraction_router)
 
 @app.get("/")
 def read_root():
