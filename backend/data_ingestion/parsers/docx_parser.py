@@ -7,26 +7,29 @@ from .base import BaseDocumentParser, DocumentParsingError
 from ..schemas import DocumentParseResult
 from ..normalizer import text_normalizer, TextNormalizationError
 
-# XML namespaces standard in Microsoft Office Open XML (.docx)
-WORD_NAMESPACE = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
-CORE_PROP_NAMESPACE = "http://schemas.openxmlformats.org/package/2006/metadata/core-properties"
-DC_NAMESPACE = "http://purl.org/dc/elements/1.1/"
+# Standard XML namespaces for Microsoft Word Open XML
+WORD_NS = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
+CORE_NS = "http://schemas.openxmlformats.org/package/2006/metadata/core-properties"
+DC_NS = "http://purl.org/dc/elements/1.1/"
+DCTERMS_NS = "http://purl.org/dc/terms/"
+CP_NS = "http://schemas.openxmlformats.org/package/2006/metadata/core-properties"
 
 
 class DOCXDocumentParser(BaseDocumentParser):
     """
     Parses Microsoft Word (.docx) documents.
-    Uses built-in zipfile and ElementTree to parse word/document.xml with zero external dependencies.
+    Extracts paragraphs, text runs, and document metadata (title, author, revision, timestamps)
+    using standard Open XML structures with secure ZIP handling.
     """
 
     def parse(self, content: bytes, filename: str) -> DocumentParseResult:
         if not content or len(content) == 0:
-            raise DocumentParsingError(f"Word document {filename} is empty (0 bytes).")
+            raise DocumentParsingError(f"Word document '{filename}' is empty (0 bytes).")
 
-        # Validate ZIP magic signature (PK\x03\x04)
+        # MIME / magic byte check for ZIP header
         if not content.startswith(b"PK\x03\x04"):
             raise DocumentParsingError(
-                f"Invalid or corrupted DOCX file {filename}: missing ZIP magic header."
+                f"MIME/format mismatch in '{filename}': File extension is .docx but content lacks PK ZIP magic header."
             )
 
         metadata: Dict[str, Any] = {"format": "docx"}
@@ -35,46 +38,65 @@ class DOCXDocumentParser(BaseDocumentParser):
         try:
             with zipfile.ZipFile(io.BytesIO(content)) as zf:
                 # Validate presence of word/document.xml
-                if "word/document.xml" not in zf.namelist():
+                namelist = zf.namelist()
+                if "word/document.xml" not in namelist:
                     raise DocumentParsingError(
-                        f"Invalid DOCX file {filename}: missing word/document.xml."
+                        f"Invalid DOCX document '{filename}': Archive does not contain word/document.xml."
                     )
 
-                # Parse document text
-                xml_content = zf.read("word/document.xml")
-                root = ET.fromstring(xml_content)
+                # Parse paragraphs and text runs
+                xml_data = zf.read("word/document.xml")
+                root = ET.fromstring(xml_data)
 
-                for p_elem in root.iter(f"{{{WORD_NAMESPACE}}}p"):
-                    p_text_parts = []
-                    for t_elem in p_elem.iter(f"{{{WORD_NAMESPACE}}}t"):
+                for p_elem in root.iter(f"{{{WORD_NS}}}p"):
+                    p_parts = []
+                    for t_elem in p_elem.iter(f"{{{WORD_NS}}}t"):
                         if t_elem.text:
-                            p_text_parts.append(t_elem.text)
-                    if p_text_parts:
-                        paragraphs.append("".join(p_text_parts))
+                            p_parts.append(t_elem.text)
+                    if p_parts:
+                        paragraphs.append("".join(p_parts))
 
-                # Extract core properties if available (author, title)
-                if "docProps/core.xml" in zf.namelist():
+                # Extract metadata from docProps/core.xml if present
+                if "docProps/core.xml" in namelist:
                     try:
-                        core_xml = zf.read("docProps/core.xml")
-                        core_root = ET.fromstring(core_xml)
-                        title_elem = core_root.find(f"{{{DC_NAMESPACE}}}title")
-                        if title_elem is not None and title_elem.text:
-                            metadata["title"] = title_elem.text
-                        creator_elem = core_root.find(f"{{{DC_NAMESPACE}}}creator")
-                        if creator_elem is not None and creator_elem.text:
-                            metadata["author"] = creator_elem.text
+                        core_data = zf.read("docProps/core.xml")
+                        core_root = ET.fromstring(core_data)
+
+                        title = core_root.find(f"{{{DC_NS}}}title")
+                        if title is not None and title.text:
+                            metadata["title"] = title.text.strip()
+
+                        creator = core_root.find(f"{{{DC_NS}}}creator")
+                        if creator is not None and creator.text:
+                            metadata["author"] = creator.text.strip()
+
+                        subject = core_root.find(f"{{{DC_NS}}}subject")
+                        if subject is not None and subject.text:
+                            metadata["subject"] = subject.text.strip()
+
+                        revision = core_root.find(f"{{{CP_NS}}}revision")
+                        if revision is not None and revision.text:
+                            metadata["revision"] = revision.text.strip()
+
+                        created = core_root.find(f"{{{DCTERMS_NS}}}created")
+                        if created is not None and created.text:
+                            metadata["created_date"] = created.text.strip()
+
+                        modified = core_root.find(f"{{{DCTERMS_NS}}}modified")
+                        if modified is not None and modified.text:
+                            metadata["modified_date"] = modified.text.strip()
                     except Exception:
                         pass
         except zipfile.BadZipFile as e:
-            raise DocumentParsingError(f"Corrupted or invalid DOCX archive {filename}: {e}")
+            raise DocumentParsingError(f"Corrupted or invalid DOCX archive in '{filename}': {e}") from e
         except ET.ParseError as e:
-            raise DocumentParsingError(f"Corrupted XML structure in DOCX file {filename}: {e}")
+            raise DocumentParsingError(f"Corrupted XML structure in DOCX '{filename}': {e}") from e
 
         extracted_text = "\n\n".join(paragraphs).strip()
 
         if not extracted_text:
             raise DocumentParsingError(
-                f"No extractable text found in DOCX file {filename}. The document is blank."
+                f"No extractable text found in DOCX file '{filename}'. The document is blank."
             )
 
         try:

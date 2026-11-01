@@ -41,7 +41,10 @@ class AudioTranscribeResult(BaseModel):
 
 class TextIngestRequest(BaseModel):
     """Request payload for direct text or transcript ingestion."""
-    company_id: str = Field(min_length=1, description="Company UUID for multi-tenant isolation")
+    company_id: Optional[str] = Field(
+        default=None,
+        description="Company UUID for Module 3 multi-tenant persistence (optional for standalone parsing)"
+    )
     title: str = Field(min_length=2, max_length=255, description="Source descriptive title")
     text: str = Field(min_length=1, description="Raw text or transcript")
     source_type: IngestionSourceType = Field(default=IngestionSourceType.DOCUMENT)
@@ -64,8 +67,8 @@ class TextIngestRequest(BaseModel):
 
 class IngestionResponse(BaseModel):
     """Comprehensive response for ingested sources across all formats."""
-    source_id: str = Field(description="UUID of the persisted source in Module 3")
-    company_id: str
+    source_id: Optional[str] = Field(default=None, description="UUID of the persisted source in Module 3")
+    company_id: Optional[str] = None
     project_id: Optional[str] = None
     title: str
     source_type: str
@@ -73,6 +76,7 @@ class IngestionResponse(BaseModel):
     character_count: int
     word_count: int
     extracted_text: str
+    persisted_to_storage: bool = False
     extraction_triggered: bool = False
     extraction_result: Optional[Dict[str, Any]] = None
     status: str = "completed"

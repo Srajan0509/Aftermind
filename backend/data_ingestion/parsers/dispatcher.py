@@ -1,5 +1,5 @@
 import os
-from typing import Dict, Type
+from typing import Dict
 
 from .base import BaseDocumentParser, DocumentParsingError
 from .text_parser import TextDocumentParser
@@ -11,8 +11,8 @@ from ..schemas import DocumentParseResult
 
 class DocumentParserDispatcher:
     """
-    Dispatcher that routes files by extension to their specialized document parser.
-    Supports .txt, .md, .pdf, .docx, .csv, .json.
+    Routes document files strictly by extension to specialized parsers.
+    Enforces the six requested formats (PDF, DOCX, TXT) and size limits.
     """
 
     def __init__(self):
@@ -22,9 +22,6 @@ class DocumentParserDispatcher:
 
         self._parsers: Dict[str, BaseDocumentParser] = {
             ".txt": self._text_parser,
-            ".md": self._text_parser,
-            ".csv": self._text_parser,
-            ".json": self._text_parser,
             ".pdf": self._pdf_parser,
             ".docx": self._docx_parser,
         }
@@ -36,7 +33,7 @@ class DocumentParserDispatcher:
         :param content: Binary file content
         :param filename: Original file name
         :return: DocumentParseResult
-        :raises DocumentParsingError: for unsupported extensions, oversize files, or parsing errors
+        :raises DocumentParsingError: for unsupported extensions, oversized files, or parsing errors
         """
         if not filename or "." not in filename:
             raise DocumentParsingError(f"Filename '{filename}' is missing a valid file extension.")
@@ -52,7 +49,7 @@ class DocumentParserDispatcher:
         if len(content) > ingestion_settings.MAX_DOCUMENT_SIZE_BYTES:
             max_mb = ingestion_settings.MAX_DOCUMENT_SIZE_BYTES / (1024 * 1024)
             raise DocumentParsingError(
-                f"File '{filename}' exceeds maximum document size of {max_mb:.1f} MB."
+                f"File '{filename}' exceeds maximum document size limit of {max_mb:.1f} MB."
             )
 
         parser = self._parsers[ext]

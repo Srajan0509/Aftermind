@@ -13,3 +13,4 @@ __all__ = [
     "AudioTranscriberManager",
     "audio_transcription_manager",
 ]
+

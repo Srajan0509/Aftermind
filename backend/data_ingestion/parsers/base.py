@@ -22,3 +22,4 @@ class BaseDocumentParser(ABC):
         :raises DocumentParsingError: if content is corrupt, empty, or unparseable
         """
         pass
+

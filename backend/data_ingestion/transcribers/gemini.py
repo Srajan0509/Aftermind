@@ -102,3 +102,4 @@ class GeminiAudioTranscriber(BaseAudioTranscriber):
             provider_used="gemini_audio",
             metadata={"model": self.model}
         )
+

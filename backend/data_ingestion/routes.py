@@ -3,7 +3,13 @@ from typing import Optional
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
 from sqlalchemy.orm import Session
 
-from memory_engine.database import get_db
+# Optional DB dependency injection
+try:
+    from memory_engine.database import get_db
+except ImportError:
+    def get_db():
+        yield None
+
 from .config import ingestion_settings
 from .normalizer import TextNormalizationError
 from .parsers.base import DocumentParsingError
@@ -25,11 +31,11 @@ router = APIRouter(
 @router.post("/text", response_model=IngestionResponse, status_code=status.HTTP_201_CREATED)
 def ingest_text_endpoint(
     request: TextIngestRequest,
-    db: Session = Depends(get_db)
+    db: Optional[Session] = Depends(get_db)
 ):
     """
     Ingest raw text, meeting transcript, or chat message directly.
-    Standardizes text, registers source in Module 3, and optionally runs Module 2 extraction.
+    Standardizes text, optionally persists source in Module 3, and optionally runs Module 2 extraction.
     """
     try:
         return ingestion_service.ingest_text(request, db=db)
@@ -44,23 +50,27 @@ def ingest_text_endpoint(
 @router.post("/document", response_model=IngestionResponse, status_code=status.HTTP_201_CREATED)
 async def ingest_document_endpoint(
     file: UploadFile = File(...),
-    company_id: str = Form(..., description="Target company UUID"),
+    company_id: Optional[str] = Form(None, description="Target company UUID (optional for standalone parsing)"),
     title: Optional[str] = Form(None, description="Optional title for the document source"),
     project_id: Optional[str] = Form(None, description="Optional project UUID"),
     author_id: Optional[str] = Form(None, description="Optional author UUID"),
     source_type: IngestionSourceType = Form(IngestionSourceType.DOCUMENT),
-    trigger_extraction: bool = Form(True, description="Forward extracted text to Module 2"),
+    trigger_extraction: bool = Form(True, description="Forward extracted text to Module 2 if company_id provided"),
     metadata: Optional[str] = Form(None, description="Optional JSON string of extra metadata"),
-    db: Session = Depends(get_db)
+    db: Optional[Session] = Depends(get_db)
 ):
     """
-    Upload and ingest document files (.txt, .md, .pdf, .docx, .csv, .json).
-    Parses content, normalizes text, registers source in Module 3, and triggers Module 2 extraction.
+    Upload and ingest document files (PDF, DOCX, TXT).
+    Parses content with PyMuPDF/XML ElementTree, validates MIME and integrity, and routes to Module 2/3.
     """
     if not file.filename:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Missing file name.")
 
-    content = await file.read()
+    try:
+        content = await file.read()
+    except Exception as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Failed to read file: {e}")
+
     if len(content) == 0:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Uploaded file is empty (0 bytes).")
 
@@ -95,24 +105,28 @@ async def ingest_document_endpoint(
 @router.post("/audio", response_model=IngestionResponse, status_code=status.HTTP_201_CREATED)
 async def ingest_audio_endpoint(
     file: UploadFile = File(...),
-    company_id: str = Form(..., description="Target company UUID"),
+    company_id: Optional[str] = Form(None, description="Target company UUID (optional for standalone parsing)"),
     title: Optional[str] = Form(None, description="Optional title for the audio source"),
     project_id: Optional[str] = Form(None, description="Optional project UUID"),
     author_id: Optional[str] = Form(None, description="Optional author UUID"),
     language: Optional[str] = Form(None, description="Optional language ISO code, e.g. 'en'"),
     source_type: IngestionSourceType = Form(IngestionSourceType.VOICE_NOTE),
-    trigger_extraction: bool = Form(True, description="Forward transcript to Module 2"),
+    trigger_extraction: bool = Form(True, description="Forward transcript to Module 2 if company_id provided"),
     metadata: Optional[str] = Form(None, description="Optional JSON string of extra metadata"),
-    db: Session = Depends(get_db)
+    db: Optional[Session] = Depends(get_db)
 ):
     """
-    Upload and ingest audio recordings or voice notes (.mp3, .wav, .m4a, .ogg, .webm, .flac).
-    Transcribes audio via Whisper/Gemini, standardizes text, registers in Module 3, and triggers Module 2.
+    Upload and ingest audio recordings or voice notes (MP3, WAV, M4A).
+    Transcribes audio via OpenAI Whisper or Google Gemini, validates MIME, and routes to Module 2/3.
     """
     if not file.filename:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Missing file name.")
 
-    content = await file.read()
+    try:
+        content = await file.read()
+    except Exception as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Failed to read file: {e}")
+
     if len(content) == 0:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Uploaded audio file is empty (0 bytes).")
 
@@ -138,7 +152,10 @@ async def ingest_audio_endpoint(
             extra_metadata=extra_meta
         )
     except AudioTranscriptionError as e:
-        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(e))
+        msg = str(e)
+        if "unavailable" in msg.lower() or "not configured" in msg.lower():
+            raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=msg)
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=msg)
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
     except Exception as e:
@@ -148,11 +165,11 @@ async def ingest_audio_endpoint(
 @router.post("/pipeline", response_model=IngestionResponse, status_code=status.HTTP_201_CREATED)
 def ingest_pipeline_endpoint(
     request: TextIngestRequest,
-    db: Session = Depends(get_db)
+    db: Optional[Session] = Depends(get_db)
 ):
     """
     Unified end-to-end ingestion pipeline:
-    Receives text/transcript -> Persists in Module 3 -> Dispatches to Module 2.
+    Receives text/transcript -> Persists in Module 3 (if db available) -> Dispatches to Module 2.
     """
     return ingest_text_endpoint(request, db=db)
 

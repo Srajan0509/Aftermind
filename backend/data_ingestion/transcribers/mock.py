@@ -47,3 +47,4 @@ class MockAudioTranscriber(BaseAudioTranscriber):
             provider_used="mock_transcriber",
             metadata={"simulated": True, "file_size_bytes": len(audio_bytes)}
         )
+

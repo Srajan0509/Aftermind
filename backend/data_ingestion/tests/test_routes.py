@@ -1,3 +1,4 @@
+import io
 import pytest
 from fastapi import HTTPException
 from sqlalchemy import create_engine
@@ -7,6 +8,7 @@ from sqlalchemy.pool import StaticPool
 from memory_engine.database import Base
 from memory_engine.schemas import CompanyCreate
 from memory_engine.memory_service import memory_service
+from data_ingestion.config import ingestion_settings
 from data_ingestion.routes import (
     ingest_text_endpoint,
     ingest_pipeline_endpoint,
@@ -39,13 +41,27 @@ def test_health_endpoint():
     resp = ingestion_health_endpoint()
     assert resp.status == "healthy"
     assert "Module 1" in resp.module
-    assert ".pdf" in resp.supported_document_types
-    assert ".docx" in resp.supported_document_types
-    assert ".mp3" in resp.supported_audio_types
+    # Exactly 3 document formats and 3 audio formats
+    assert resp.supported_document_types == [".docx", ".pdf", ".txt"]
+    assert resp.supported_audio_types == [".m4a", ".mp3", ".wav"]
     assert resp.max_input_characters == 100000
 
 
-def test_text_endpoint(db):
+def test_text_endpoint_standalone():
+    """Text endpoint executes cleanly in standalone mode without a company_id or db."""
+    req = TextIngestRequest(
+        title="Quick Standalone Memo",
+        text="Target completion date for Stripe payment integration is November 30.",
+        source_type=IngestionSourceType.DOCUMENT,
+        trigger_extraction=False
+    )
+    res = ingest_text_endpoint(req, db=None)
+    assert res.source_id is not None
+    assert res.persisted_to_storage is False
+    assert res.character_count > 0
+
+
+def test_text_endpoint_with_db(db):
     comp = memory_service.get_or_create_company(db, CompanyCreate(name="Route Testing Inc"))
     req = TextIngestRequest(
         company_id=comp.id,
@@ -56,30 +72,25 @@ def test_text_endpoint(db):
     )
     res = ingest_text_endpoint(req, db=db)
     assert res.source_id is not None
+    assert res.persisted_to_storage is True
     assert res.title == "Weekly Sync Call"
-    assert res.character_count > 0
 
 
-def test_pipeline_endpoint(db):
-    comp = memory_service.get_or_create_company(db, CompanyCreate(name="Pipeline Route Testing"))
+def test_pipeline_endpoint_standalone():
     req = TextIngestRequest(
-        company_id=comp.id,
         title="Pipeline Document",
         text="The client requires two-factor authentication via SMS or authenticator app.",
         source_type=IngestionSourceType.DOCUMENT,
         trigger_extraction=False
     )
-    res = ingest_pipeline_endpoint(req, db=db)
+    res = ingest_pipeline_endpoint(req, db=None)
     assert res.source_id is not None
     assert res.status == "completed"
 
 
-def test_text_endpoint_rejects_empty(db):
-    comp = memory_service.get_or_create_company(db, CompanyCreate(name="Error Route Testing"))
-    # Pydantic validation rejects blank text
+def test_text_endpoint_rejects_empty():
     with pytest.raises(Exception):
         TextIngestRequest(
-            company_id=comp.id,
             title="Empty Note",
             text="   ",
             trigger_extraction=False

@@ -81,3 +81,4 @@ class WhisperAudioTranscriber(BaseAudioTranscriber):
             provider_used="openai_whisper",
             metadata={"model": self.model, "segments_count": len(resp_json.get("segments", []))}
         )
+

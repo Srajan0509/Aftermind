@@ -1,33 +1,34 @@
 import io
-import json
 import zipfile
 import pytest
+import fitz
 
 from data_ingestion.parsers.dispatcher import document_dispatcher
 from data_ingestion.parsers.base import DocumentParsingError
 
 
-def make_minimal_pdf(text: str) -> bytes:
-    """Creates a valid, lightweight PDF file containing the specified text string."""
-    stream_content = f"BT /F1 12 Tf 72 712 Td ({text}) Tj ET".encode("latin-1")
-    stream_len = len(stream_content)
-    pdf = (
-        b"%PDF-1.4\n"
-        b"1 0 obj <</Type /Catalog /Pages 2 0 R>> endobj\n"
-        b"2 0 obj <</Type /Pages /Kids [3 0 R] /Count 1>> endobj\n"
-        b"3 0 obj <</Type /Page /Parent 2 0 R /Resources <</Font <</F1 4 0 R>>>> /MediaBox [0 0 612 792] /Contents 5 0 R>> endobj\n"
-        b"4 0 obj <</Type /Font /Subtype /Type1 /BaseFont /Helvetica>> endobj\n"
-        b"5 0 obj <</Length " + str(stream_len).encode("latin-1") + b">> stream\n" +
-        stream_content +
-        b"\nendstream\nendobj\n"
-        b"xref\n0 6\n0000000000 65535 f \n"
-        b"trailer <</Size 6 /Root 1 0 R>>\nstartxref\n500\n%%EOF"
-    )
-    return pdf
+def make_pdf_with_fitz(text: str, title: str = "Test Spec", author: str = "Engineering Team") -> bytes:
+    """Creates a valid PDF using PyMuPDF (fitz) with metadata and text."""
+    doc = fitz.open()
+    page = doc.new_page()
+    page.insert_text((72, 72), text)
+    doc.set_metadata({
+        "title": title,
+        "author": author,
+        "subject": "Business Memory Ingestion",
+    })
+    pdf_bytes = doc.tobytes()
+    doc.close()
+    return pdf_bytes
 
 
-def make_minimal_docx(text: str) -> bytes:
-    """Creates a valid, lightweight DOCX archive containing the specified text string."""
+def make_docx_with_metadata(
+    text: str,
+    title: str = "Business Requirements",
+    author: str = "Product Manager",
+    revision: str = "2"
+) -> bytes:
+    """Creates a valid DOCX file with word/document.xml and docProps/core.xml."""
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
         zf.writestr(
@@ -36,99 +37,94 @@ def make_minimal_docx(text: str) -> bytes:
             '<Default Extension="xml" ContentType="application/xml"/>'
             '<Override PartName="/word/document.xml" '
             'ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>'
+            '<Override PartName="/docProps/core.xml" '
+            'ContentType="application/vnd.openxmlformats-package.core-properties+xml"/>'
             '</Types>'
         )
         doc_xml = (
             '<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">'
-            f'<w:body><w:p><w:r><w:t>{text}</w:t></w:r></w:p></w:body>'
+            '<w:body>'
+            f'<w:p><w:r><w:t>{text}</w:t></w:r></w:p>'
+            '<w:p><w:r><w:t>Second paragraph discussing milestones and payment gateway.</w:t></w:r></w:p>'
+            '</w:body>'
             '</w:document>'
         )
         zf.writestr("word/document.xml", doc_xml)
+
+        core_xml = (
+            '<cp:coreProperties xmlns:cp="http://schemas.openxmlformats.org/package/2006/metadata/core-properties" '
+            'xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:dcterms="http://purl.org/dc/terms/">'
+            f'<dc:title>{title}</dc:title>'
+            f'<dc:creator>{author}</dc:creator>'
+            f'<cp:revision>{revision}</cp:revision>'
+            '<dcterms:created>2026-10-31T10:00:00Z</dcterms:created>'
+            '</cp:coreProperties>'
+        )
+        zf.writestr("docProps/core.xml", core_xml)
+
     return buf.getvalue()
 
 
 # -------------------------------------------------------------------
-# Format 1: Plain Text (.txt)
+# Format 1: PDF (.pdf) via PyMuPDF (fitz)
 # -------------------------------------------------------------------
-def test_parse_valid_txt():
-    content = b"Decision: We decided to deploy the service on AWS ECS.\nDeadline: November 15."
-    res = document_dispatcher.parse_document(content, "meeting_notes.txt")
-    assert res.file_type == "txt"
-    assert "deploy the service on AWS ECS" in res.extracted_text
+def test_parse_valid_pdf_with_pymupdf():
+    content = make_pdf_with_fitz(
+        text="The client ABC Technologies approved Stripe payment integration. Deadline December 20, 2026.",
+        title="Payment Architecture Document",
+        author="Srajan"
+    )
+    res = document_dispatcher.parse_document(content, "payment_arch.pdf")
+
+    assert res.file_type == "pdf"
+    assert "approved Stripe payment integration" in res.extracted_text
+    assert res.metadata["title"] == "Payment Architecture Document"
+    assert res.metadata["author"] == "Srajan"
+    assert res.metadata["page_count"] == 1
     assert res.word_count > 0
 
 
 # -------------------------------------------------------------------
-# Format 2: Markdown (.md)
+# Format 2: Word Document (.docx)
 # -------------------------------------------------------------------
-def test_parse_valid_markdown():
-    content = b"# Sprint Goals\n\n- Feature A: Complete authentication\n- Feature B: Build memory extraction"
-    res = document_dispatcher.parse_document(content, "sprint.md")
-    assert res.file_type == "md"
-    assert "Complete authentication" in res.extracted_text
-    assert res.metadata["format"] == "markdown"
+def test_parse_valid_docx_with_metadata():
+    content = make_docx_with_metadata(
+        text="Client commitment: John will deliver the SSO authentication module by Monday.",
+        title="SSO Specification",
+        author="Alice",
+        revision="3"
+    )
+    res = document_dispatcher.parse_document(content, "sso_spec.docx")
 
-
-# -------------------------------------------------------------------
-# Format 3: CSV (.csv)
-# -------------------------------------------------------------------
-def test_parse_valid_csv():
-    content = b"Task,Owner,Status\nDatabase Migration,Alice,Completed\nUI Redesign,Bob,In Progress"
-    res = document_dispatcher.parse_document(content, "tracker.csv")
-    assert res.file_type == "csv"
-    assert "Task: Database Migration; Owner: Alice; Status: Completed" in res.extracted_text
-    assert res.metadata["column_count"] == 3
-    assert res.metadata["row_count"] == 2
-
-
-# -------------------------------------------------------------------
-# Format 4: JSON (.json)
-# -------------------------------------------------------------------
-def test_parse_valid_json():
-    data = {
-        "meeting_topic": "Architecture Review",
-        "participants": ["Alice", "Bob"],
-        "decisions": ["Adopt PostgreSQL with pgvector"]
-    }
-    content = json.dumps(data).encode("utf-8")
-    res = document_dispatcher.parse_document(content, "meeting.json")
-    assert res.file_type == "json"
-    assert "meeting_topic: Architecture Review" in res.extracted_text
-    assert "Adopt PostgreSQL with pgvector" in res.extracted_text
-
-
-# -------------------------------------------------------------------
-# Format 5: PDF (.pdf)
-# -------------------------------------------------------------------
-def test_parse_valid_pdf():
-    pdf_bytes = make_minimal_pdf("Project Phoenix deadline is December 20.")
-    res = document_dispatcher.parse_document(pdf_bytes, "proposal.pdf")
-    assert res.file_type == "pdf"
-    assert "Project Phoenix deadline is December 20" in res.extracted_text
-    assert res.metadata["page_count"] >= 1
-
-
-# -------------------------------------------------------------------
-# Format 6: DOCX (.docx)
-# -------------------------------------------------------------------
-def test_parse_valid_docx():
-    docx_bytes = make_minimal_docx("Client requirement: Support OAuth 2.0 with Google and GitHub.")
-    res = document_dispatcher.parse_document(docx_bytes, "requirements.docx")
     assert res.file_type == "docx"
-    assert "Support OAuth 2.0 with Google and GitHub" in res.extracted_text
-    assert res.metadata["paragraph_count"] >= 1
+    assert "SSO authentication module by Monday" in res.extracted_text
+    assert "Second paragraph discussing milestones" in res.extracted_text
+    assert res.metadata["title"] == "SSO Specification"
+    assert res.metadata["author"] == "Alice"
+    assert res.metadata["revision"] == "3"
+    assert res.metadata["paragraph_count"] == 2
+
+
+# -------------------------------------------------------------------
+# Format 3: Plain Text (.txt)
+# -------------------------------------------------------------------
+def test_parse_valid_txt():
+    content = b"Decision: We agreed on a 2-week sprint cycle.\nNext review is on November 15, 2026."
+    res = document_dispatcher.parse_document(content, "sprint_review.txt")
+
+    assert res.file_type == "txt"
+    assert "agreed on a 2-week sprint cycle" in res.extracted_text
+    assert res.metadata["format"] == "plain_text"
+    assert res.word_count > 0
 
 
 # -------------------------------------------------------------------
 # Error Cases: Empty Files (0 Bytes)
 # -------------------------------------------------------------------
 @pytest.mark.parametrize("filename", [
-    "empty.txt",
-    "empty.md",
-    "empty.csv",
-    "empty.json",
     "empty.pdf",
     "empty.docx",
+    "empty.txt",
 ])
 def test_empty_files_rejected(filename):
     with pytest.raises(DocumentParsingError) as exc_info:
@@ -140,38 +136,56 @@ def test_empty_files_rejected(filename):
 # Error Cases: Corrupted Files
 # -------------------------------------------------------------------
 def test_corrupted_pdf_rejected():
-    # Corrupt PDF header
-    corrupt_bytes = b"NOT_A_PDF_STREAM_RANDOM_DATA_1234567890"
+    corrupt_pdf = b"%PDF-1.4\nCorrupted binary junk content that fails MuPDF parsing\x00\xff\xee"
     with pytest.raises(DocumentParsingError) as exc_info:
-        document_dispatcher.parse_document(corrupt_bytes, "broken.pdf")
-    assert "missing %pdf" in str(exc_info.value).lower()
+        document_dispatcher.parse_document(corrupt_pdf, "broken.pdf")
+    assert "failed to parse pdf" in str(exc_info.value).lower() or "no extractable text" in str(exc_info.value).lower()
 
 
 def test_corrupted_docx_rejected():
-    # Missing zip header or corrupted zip
-    corrupt_bytes = b"PK\x03\x04CORRUPTED_ZIP_BODY_DATA"
+    corrupt_docx = b"PK\x03\x04INVALID_TRUNCATED_ZIP_ARCHIVE"
     with pytest.raises(DocumentParsingError) as exc_info:
-        document_dispatcher.parse_document(corrupt_bytes, "broken.docx")
+        document_dispatcher.parse_document(corrupt_docx, "broken.docx")
     assert "corrupt" in str(exc_info.value).lower() or "invalid" in str(exc_info.value).lower()
 
 
-def test_corrupted_json_rejected():
-    corrupt_json = b'{"decision": "Incomplete string without closing brace'
+# -------------------------------------------------------------------
+# Error Cases: MIME / Magic Bytes Mismatches
+# -------------------------------------------------------------------
+def test_mime_mismatch_pdf_containing_plain_text():
+    # Plain text saved with .pdf extension
+    fake_pdf = b"This is just plain text, not a valid PDF binary file."
     with pytest.raises(DocumentParsingError) as exc_info:
-        document_dispatcher.parse_document(corrupt_json, "broken.json")
-    assert "invalid json" in str(exc_info.value).lower() or "corrupt" in str(exc_info.value).lower()
+        document_dispatcher.parse_document(fake_pdf, "spoofed.pdf")
+    assert "mime/format mismatch" in str(exc_info.value).lower()
+
+
+def test_mime_mismatch_docx_containing_plain_text():
+    # Plain text saved with .docx extension
+    fake_docx = b"This is plain text without a PK zip magic header."
+    with pytest.raises(DocumentParsingError) as exc_info:
+        document_dispatcher.parse_document(fake_docx, "spoofed.docx")
+    assert "mime/format mismatch" in str(exc_info.value).lower()
+
+
+def test_mime_mismatch_txt_containing_binary_executable():
+    # Executable DOS/Windows MZ header saved with .txt extension
+    fake_txt = b"MZ\x90\x00\x03\x00\x00\x00This is a binary executable"
+    with pytest.raises(DocumentParsingError) as exc_info:
+        document_dispatcher.parse_document(fake_txt, "malware.txt")
+    assert "mime/format mismatch" in str(exc_info.value).lower()
 
 
 # -------------------------------------------------------------------
 # Error Cases: Unsupported and Invalid Extensions
 # -------------------------------------------------------------------
-def test_unsupported_file_extension():
+def test_unsupported_document_extension():
     with pytest.raises(DocumentParsingError) as exc_info:
-        document_dispatcher.parse_document(b"echo Hello", "script.sh")
+        document_dispatcher.parse_document(b"echo 'run script'", "deploy.sh")
     assert "unsupported document format '.sh'" in str(exc_info.value).lower()
 
 
-def test_missing_file_extension():
+def test_missing_document_extension():
     with pytest.raises(DocumentParsingError) as exc_info:
-        document_dispatcher.parse_document(b"Some text", "no_extension_file")
+        document_dispatcher.parse_document(b"Notes without extension", "meeting_notes")
     assert "missing a valid file extension" in str(exc_info.value).lower()

@@ -1,6 +1,4 @@
-import io
-import re
-import zlib
+import os
 from typing import Dict, Any, List
 
 from .base import BaseDocumentParser, DocumentParsingError
@@ -10,51 +8,79 @@ from ..normalizer import text_normalizer, TextNormalizationError
 
 class PDFDocumentParser(BaseDocumentParser):
     """
-    Parses PDF documents.
-    Uses pypdf if installed; includes built-in pure-Python fallback for FlateDecode
-    and text stream decompression.
+    Parses PDF documents using PyMuPDF (fitz).
+    Reliably extracts text streams, metadata, and page counts while guarding
+    against encrypted, malformed, or MIME-mismatched files.
     """
 
     def parse(self, content: bytes, filename: str) -> DocumentParseResult:
         if not content or len(content) == 0:
-            raise DocumentParsingError(f"PDF document {filename} is empty (0 bytes).")
+            raise DocumentParsingError(f"PDF document '{filename}' is empty (0 bytes).")
 
-        # Validate PDF magic header
+        # MIME / magic bytes verification
         if b"%PDF-" not in content[:1024]:
-            raise DocumentParsingError(f"Invalid or corrupted PDF file {filename}: missing %PDF magic header.")
+            raise DocumentParsingError(
+                f"MIME/format mismatch in '{filename}': File extension is .pdf but content lacks %PDF magic header."
+            )
 
-        extracted_text = ""
-        page_count = 0
-        metadata: Dict[str, Any] = {"format": "pdf"}
-
-        # Attempt 1: Try pypdf if available
         try:
-            import pypdf
-            reader = pypdf.PdfReader(io.BytesIO(content))
-            if reader.is_encrypted:
-                raise DocumentParsingError(f"PDF file {filename} is encrypted/password-protected.")
+            import fitz
+        except ImportError as e:
+            raise DocumentParsingError(
+                "PyMuPDF ('fitz') is required for PDF parsing. Please install pymupdf."
+            ) from e
 
-            page_count = len(reader.pages)
-            pages_text = []
-            for i, page in enumerate(reader.pages):
-                txt = page.extract_text() or ""
-                if txt.strip():
-                    pages_text.append(txt.strip())
+        doc = None
+        try:
+            doc = fitz.open(stream=content, filetype="pdf")
+            if doc.is_encrypted:
+                raise DocumentParsingError(
+                    f"PDF document '{filename}' is encrypted or password-protected."
+                )
 
-            extracted_text = "\n\n".join(pages_text)
-            if reader.metadata:
-                metadata["title"] = reader.metadata.title or None
-                metadata["author"] = reader.metadata.author or None
+            page_count = doc.page_count
+            pages_text: List[str] = []
+
+            for page_num in range(page_count):
+                page = doc.load_page(page_num)
+                page_text = page.get_text("text") or ""
+                if page_text.strip():
+                    pages_text.append(page_text.strip())
+
+            extracted_text = "\n\n".join(pages_text).strip()
+
+            metadata: Dict[str, Any] = {
+                "format": "pdf",
+                "page_count": page_count,
+            }
+
+            # Extract document metadata
+            doc_meta = doc.metadata or {}
+            if doc_meta.get("title"):
+                metadata["title"] = doc_meta["title"].strip()
+            if doc_meta.get("author"):
+                metadata["author"] = doc_meta["author"].strip()
+            if doc_meta.get("creationDate"):
+                metadata["creation_date"] = doc_meta["creationDate"].strip()
+            if doc_meta.get("modDate"):
+                metadata["modified_date"] = doc_meta["modDate"].strip()
+            if doc_meta.get("subject"):
+                metadata["subject"] = doc_meta["subject"].strip()
+
         except DocumentParsingError:
             raise
-        except Exception:
-            # Attempt 2: Built-in pure-Python text and stream extractor
-            extracted_text, page_count = self._pure_python_pdf_extract(content, filename)
+        except Exception as e:
+            raise DocumentParsingError(f"Failed to parse PDF document '{filename}': {e}") from e
+        finally:
+            if doc is not None:
+                try:
+                    doc.close()
+                except Exception:
+                    pass
 
-        if not extracted_text or not extracted_text.strip():
-            # If after both attempts no text was found (e.g. image-only or empty)
+        if not extracted_text:
             raise DocumentParsingError(
-                f"No extractable text found in PDF {filename}. The document may be empty, image-only, or corrupted."
+                f"No extractable text found in PDF '{filename}'. The document is blank or contains only images."
             )
 
         try:
@@ -62,7 +88,6 @@ class PDFDocumentParser(BaseDocumentParser):
         except TextNormalizationError as e:
             raise DocumentParsingError(str(e)) from e
 
-        metadata["page_count"] = page_count or 1
         metadata.update(stats)
 
         return DocumentParseResult(
@@ -73,44 +98,3 @@ class PDFDocumentParser(BaseDocumentParser):
             extracted_text=cleaned_text,
             metadata=metadata
         )
-
-    def _pure_python_pdf_extract(self, content: bytes, filename: str) -> tuple[str, int]:
-        """Built-in stream extractor that decompresses flate streams and extracts PDF text objects."""
-        text_parts: List[str] = []
-
-        # Count pages approximately
-        page_count = max(len(re.findall(rb"/Type\s*/Page\b", content)), 1)
-
-        # Find all stream ... endstream blocks
-        stream_matches = re.finditer(rb"stream\r?\n(.*?)\r?\nendstream", content, re.DOTALL)
-        for match in stream_matches:
-            stream_data = match.group(1)
-            # Try to decompress FlateDecode stream
-            try:
-                decompressed = zlib.decompress(stream_data)
-            except Exception:
-                # Might be uncompressed stream or different filter
-                decompressed = stream_data
-
-            # Extract text within parentheses: (Sample text) Tj or (Sample) '
-            tj_matches = re.findall(rb"\((.*?)\)\s*(?:Tj|'|\")", decompressed)
-            for m in tj_matches:
-                try:
-                    text_parts.append(m.decode("utf-8", errors="replace"))
-                except Exception:
-                    pass
-
-            # Extract text arrays: [(Part1) 10 (Part2)] TJ
-            array_matches = re.findall(rb"\[(.*?)\]\s*TJ", decompressed)
-            for arr in array_matches:
-                inner_strings = re.findall(rb"\((.*?)\)", arr)
-                for s in inner_strings:
-                    try:
-                        text_parts.append(s.decode("utf-8", errors="replace"))
-                    except Exception:
-                        pass
-
-        extracted = " ".join(text_parts).strip()
-        # Clean up PDF string escapes
-        extracted = extracted.replace(r"\(", "(").replace(r"\)", ")").replace(r"\\", "\\")
-        return extracted, page_count

@@ -37,3 +37,4 @@ def test_normalizer_handles_bytes_input():
     cleaned, stats = text_normalizer.normalize(byte_content, "raw.txt")
     assert "Approved project budget" in cleaned
     assert stats["character_count"] == len(cleaned)
+

@@ -28,3 +28,4 @@ class BaseAudioTranscriber(ABC):
         :raises AudioTranscriptionError: on transcription or network failure
         """
         pass
+
