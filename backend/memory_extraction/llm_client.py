@@ -94,8 +94,28 @@ class LLMClient:
                 timeout=settings.llm_timeout_seconds,
             )
             response.raise_for_status()
-            content = response.json()["candidates"][0]["content"]["parts"][0]["text"]
+            resp_json = response.json()
+            candidates = resp_json.get("candidates", [])
+            if not candidates:
+                # Gemini may return promptFeedback with a block reason
+                feedback = resp_json.get("promptFeedback", {})
+                block_reason = feedback.get("blockReason", "unknown")
+                raise LLMResponseError(
+                    f"Gemini returned no candidates (blockReason={block_reason}). "
+                    "Try shortening the input or rephrasing."
+                )
+            candidate = candidates[0]
+            finish_reason = candidate.get("finishReason", "")
+            parts = candidate.get("content", {}).get("parts", [])
+            if not parts or not parts[0].get("text", "").strip():
+                raise LLMResponseError(
+                    f"Gemini returned an empty response (finishReason={finish_reason}). "
+                    "The model may have been blocked by safety filters or hit a token limit."
+                )
+            content = parts[0]["text"]
             return self._parse_json(content)
+        except LLMResponseError:
+            raise
         except (httpx.HTTPError, KeyError, IndexError, TypeError, ValueError) as exc:
             raise LLMResponseError(f"Gemini extraction request failed: {exc}") from exc
 
@@ -153,8 +173,25 @@ class LLMClient:
                 timeout=settings.llm_timeout_seconds,
             )
             response.raise_for_status()
-            content = response.json()["choices"][0]["message"]["content"]
+            resp_json = response.json()
+            choices = resp_json.get("choices", [])
+            if not choices:
+                error_info = resp_json.get("error", {})
+                raise LLMResponseError(
+                    f"OpenRouter returned no choices: {error_info.get('message', 'unknown error')}. "
+                    "Check your API key or model availability."
+                )
+            message = choices[0].get("message", {})
+            content = message.get("content", "") or ""
+            if not content.strip():
+                finish_reason = choices[0].get("finish_reason", "unknown")
+                raise LLMResponseError(
+                    f"OpenRouter returned empty content (finish_reason={finish_reason}). "
+                    "The model may have been content-filtered. Try switching LLM_PROVIDER to 'groq'."
+                )
             return self._parse_json(content)
+        except LLMResponseError:
+            raise
         except (httpx.HTTPError, KeyError, IndexError, TypeError, ValueError) as exc:
             if isinstance(exc, LLMResponseError):
                 raise
