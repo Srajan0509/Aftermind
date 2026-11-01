@@ -8,7 +8,7 @@ import { ExtractionTab } from "../components/ExtractionTab";
 import { SearchAndChatTab } from "../components/SearchAndChatTab";
 import { CommitmentTrackerTab } from "../components/CommitmentTrackerTab";
 import { api, Memory, CommitmentItem, Company } from "../lib/api";
-import { Brain, Sparkles, ShieldCheck } from "lucide-react";
+import { Brain } from "lucide-react";
 
 export default function Home() {
   const [activeTab, setActiveTab] = useState<TabType>("overview");
@@ -70,8 +70,12 @@ export default function Home() {
     setActiveTab("extraction");
   };
 
+  const handleBackToDashboard = () => {
+    setActiveTab("overview");
+  };
+
   return (
-    <div className="min-h-screen flex flex-col bg-[#090d16] text-slate-100 selection:bg-indigo-500/30">
+    <div className="min-h-screen flex flex-col bg-[#0b0f19] text-slate-100 selection:bg-blue-600/40">
       {/* Navbar with Module Switcher & Tenant Selector */}
       <Navbar
         activeTab={activeTab}
@@ -99,6 +103,7 @@ export default function Home() {
           <IngestionTab
             companyId={selectedCompany}
             onSendToExtraction={handleSendToExtraction}
+            onBack={handleBackToDashboard}
           />
         )}
 
@@ -108,11 +113,15 @@ export default function Home() {
             initialText={draftText}
             initialTitle={draftTitle}
             onRefreshMemories={fetchData}
+            onBack={handleBackToDashboard}
           />
         )}
 
         {activeTab === "search-chat" && (
-          <SearchAndChatTab companyId={selectedCompany} />
+          <SearchAndChatTab
+            companyId={selectedCompany}
+            onBack={handleBackToDashboard}
+          />
         )}
 
         {activeTab === "tracker" && (
@@ -122,19 +131,20 @@ export default function Home() {
             analytics={analytics}
             loading={loading}
             onRefresh={fetchData}
+            onBack={handleBackToDashboard}
           />
         )}
       </main>
 
       {/* Footer */}
-      <footer className="border-t border-slate-900/80 bg-slate-950/40 py-6 text-xs text-slate-500">
+      <footer className="border-t border-slate-800 bg-[#0d131f] py-6 text-xs text-slate-400">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-col sm:flex-row items-center justify-between gap-4">
           <div className="flex items-center gap-2">
-            <Brain className="w-4 h-4 text-indigo-400" />
-            <span className="font-semibold text-slate-400">AFTERMIND</span>
-            <span>— AI-Powered Organizational Memory & Decision Intelligence</span>
+            <Brain className="w-4 h-4 text-blue-400" />
+            <span className="font-bold text-white">AFTERMIND</span>
+            <span>— AI-Powered Corporate Memory & Decision Intelligence</span>
           </div>
-          <div className="flex items-center gap-4 text-[11px]">
+          <div className="flex items-center gap-4 text-xs font-medium text-slate-400">
             <span>Module 1: Ingestion</span>
             <span>•</span>
             <span>Module 2: Extraction</span>
@@ -143,7 +153,7 @@ export default function Home() {
             <span>•</span>
             <span>Module 4: Tracker</span>
             <span>•</span>
-            <span className="text-indigo-400 font-semibold">Module 5: Dashboard</span>
+            <span className="text-blue-400 font-bold">Module 5: Dashboard</span>
           </div>
         </div>
       </footer>

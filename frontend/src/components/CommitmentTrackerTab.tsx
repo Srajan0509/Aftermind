@@ -11,6 +11,7 @@ import {
   Filter,
   RefreshCw,
   Loader2,
+  ArrowLeft,
 } from "lucide-react";
 import { api, CommitmentItem } from "../lib/api";
 
@@ -20,6 +21,7 @@ interface CommitmentTrackerTabProps {
   analytics: any;
   loading: boolean;
   onRefresh: () => void;
+  onBack?: () => void;
 }
 
 export const CommitmentTrackerTab: React.FC<CommitmentTrackerTabProps> = ({
@@ -28,6 +30,7 @@ export const CommitmentTrackerTab: React.FC<CommitmentTrackerTabProps> = ({
   analytics,
   loading,
   onRefresh,
+  onBack,
 }) => {
   const [statusFilter, setStatusFilter] = useState<string>("ALL");
   const [updatingId, setUpdatingId] = useState<string | null>(null);
@@ -51,68 +54,79 @@ export const CommitmentTrackerTab: React.FC<CommitmentTrackerTabProps> = ({
 
   return (
     <div className="max-w-5xl mx-auto space-y-6 animate-fadeIn">
+      {/* Back to Dashboard Button */}
+      {onBack && (
+        <button
+          onClick={onBack}
+          className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-100 border border-slate-600 text-sm font-semibold transition-all hover:-translate-x-0.5 shadow-sm"
+        >
+          <ArrowLeft className="w-4 h-4 text-blue-400" />
+          <span>Back to Dashboard</span>
+        </button>
+      )}
+
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-xs font-semibold mb-1">
+          <div className="inline-flex items-center gap-2 px-3 py-1 rounded bg-emerald-950 border border-emerald-600 text-emerald-300 text-xs font-bold uppercase tracking-wider mb-1">
             <span>Module 4: Smart Commitment & Decision Tracker</span>
           </div>
-          <h2 className="text-xl sm:text-2xl font-bold text-white tracking-tight">
+          <h2 className="text-2xl sm:text-3xl font-extrabold text-white tracking-tight">
             Commitments, Deadlines & Accountability
           </h2>
-          <p className="text-xs sm:text-sm text-slate-400 mt-1">
+          <p className="text-sm sm:text-base text-slate-200 mt-1 leading-relaxed">
             Tracks business tasks, owners, deadlines, and urgency levels with real-time countdowns.
           </p>
         </div>
 
         <button
           onClick={onRefresh}
-          className="self-start sm:self-auto px-3.5 py-2 rounded-xl bg-slate-900 border border-slate-700 hover:border-slate-600 text-slate-300 text-xs font-medium flex items-center gap-2 transition-all hover:scale-105"
+          className="self-start sm:self-auto px-4 py-2.5 rounded-lg bg-slate-900 border border-slate-600 hover:border-slate-500 text-slate-100 text-sm font-semibold flex items-center gap-2 transition-all hover:scale-105"
         >
-          <RefreshCw className={`w-3.5 h-3.5 ${loading ? "animate-spin" : ""}`} />
-          <span>Refresh</span>
+          <RefreshCw className={`w-4 h-4 ${loading ? "animate-spin" : ""}`} />
+          <span>Refresh Data</span>
         </button>
       </div>
 
-      {/* Analytics Mini-Cards */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-        <div className="p-4 rounded-xl glass-card border border-slate-800">
-          <span className="text-xs text-slate-400 font-medium">Total Tracked</span>
-          <div className="text-2xl font-extrabold text-white mt-1">
+      {/* Analytics Metric Cards */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+        <div className="p-5 rounded-xl biz-card border border-slate-700">
+          <span className="text-xs font-bold uppercase tracking-wider text-slate-300">Total Tracked</span>
+          <div className="text-3xl font-extrabold text-white mt-2">
             {analytics.total ?? commitments.length}
           </div>
         </div>
-        <div className="p-4 rounded-xl glass-card border border-slate-800">
-          <span className="text-xs text-emerald-400 font-medium">Active Tasks</span>
-          <div className="text-2xl font-extrabold text-emerald-400 mt-1">
+        <div className="p-5 rounded-xl biz-card border border-slate-700">
+          <span className="text-xs font-bold uppercase tracking-wider text-emerald-400">Active Tasks</span>
+          <div className="text-3xl font-extrabold text-emerald-400 mt-2">
             {analytics.active ?? commitments.filter((c) => c.status === "ACTIVE").length}
           </div>
         </div>
-        <div className="p-4 rounded-xl glass-card border border-slate-800">
-          <span className="text-xs text-rose-400 font-medium">Overdue / Critical</span>
-          <div className="text-2xl font-extrabold text-rose-400 mt-1">
+        <div className="p-5 rounded-xl biz-card border border-slate-700">
+          <span className="text-xs font-bold uppercase tracking-wider text-rose-400">Overdue / Critical</span>
+          <div className="text-3xl font-extrabold text-rose-400 mt-2">
             {analytics.overdue ?? commitments.filter((c) => c.status === "OVERDUE").length}
           </div>
         </div>
-        <div className="p-4 rounded-xl glass-card border border-slate-800">
-          <span className="text-xs text-indigo-400 font-medium">Completion Rate</span>
-          <div className="text-2xl font-extrabold text-indigo-300 mt-1">
+        <div className="p-5 rounded-xl biz-card border border-slate-700">
+          <span className="text-xs font-bold uppercase tracking-wider text-blue-400">Completion Rate</span>
+          <div className="text-3xl font-extrabold text-blue-300 mt-2">
             {analytics.completion_rate ?? 0}%
           </div>
         </div>
       </div>
 
       {/* Filter Bar */}
-      <div className="flex flex-wrap items-center gap-2 border-b border-slate-800 pb-3">
-        <Filter className="w-4 h-4 text-slate-400 mr-1" />
+      <div className="flex flex-wrap items-center gap-2.5 border-b border-slate-700 pb-3">
+        <Filter className="w-4 h-4 text-slate-300 mr-1" />
         {["ALL", "ACTIVE", "PENDING", "COMPLETED", "OVERDUE"].map((s) => (
           <button
             key={s}
             onClick={() => setStatusFilter(s)}
-            className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+            className={`px-4 py-2 rounded-lg text-xs sm:text-sm font-bold transition-all ${
               statusFilter === s
-                ? "bg-indigo-600 text-white shadow-sm"
-                : "bg-slate-900 border border-slate-800 text-slate-400 hover:text-slate-200"
+                ? "bg-blue-600 text-white shadow-sm"
+                : "bg-slate-900 border border-slate-700 text-slate-300 hover:text-white"
             }`}
           >
             {s}
@@ -122,11 +136,11 @@ export const CommitmentTrackerTab: React.FC<CommitmentTrackerTabProps> = ({
 
       {/* Commitment Cards */}
       {filteredCommitments.length === 0 ? (
-        <div className="glass-panel p-12 rounded-2xl border border-slate-800 text-center text-xs text-slate-400">
-          No commitments found under "{statusFilter}". You can extract commitments from meeting notes in Module 2!
+        <div className="biz-panel p-12 rounded-xl border border-slate-700 text-center text-sm text-slate-300">
+          No commitments found under status "{statusFilter}". You can extract commitments from meeting notes in Module 2!
         </div>
       ) : (
-        <div className="space-y-3">
+        <div className="space-y-4">
           {filteredCommitments.map((c) => {
             const isOverdue = c.status === "OVERDUE" || (c.days_remaining !== undefined && c.days_remaining < 0);
             const isCompleted = c.status === "COMPLETED";
@@ -134,19 +148,19 @@ export const CommitmentTrackerTab: React.FC<CommitmentTrackerTabProps> = ({
             return (
               <div
                 key={c.id}
-                className={`glass-panel p-5 rounded-2xl border transition-all ${
+                className={`biz-panel p-5 sm:p-6 rounded-xl border transition-all ${
                   isOverdue
-                    ? "border-rose-500/30 bg-rose-950/10"
+                    ? "border-rose-500 bg-rose-950/20"
                     : isCompleted
-                    ? "border-emerald-500/30 bg-emerald-950/10 opacity-75"
-                    : "border-slate-800 hover:border-slate-700 bg-slate-900/60"
+                    ? "border-emerald-600/70 bg-emerald-950/20 opacity-80"
+                    : "border-slate-700 hover:border-blue-500 bg-[#161f30]"
                 }`}
               >
-                <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-3">
-                  <div className="space-y-1.5 flex-1">
-                    <div className="flex items-center gap-2 flex-wrap">
+                <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4">
+                  <div className="space-y-2 flex-1">
+                    <div className="flex items-center gap-2.5 flex-wrap">
                       <h3
-                        className={`font-bold text-sm sm:text-base ${
+                        className={`font-bold text-base sm:text-lg ${
                           isCompleted ? "line-through text-slate-400" : "text-white"
                         }`}
                       >
@@ -155,12 +169,12 @@ export const CommitmentTrackerTab: React.FC<CommitmentTrackerTabProps> = ({
 
                       {/* Status Badge */}
                       <span
-                        className={`text-[10px] font-bold uppercase px-2 py-0.5 rounded ${
+                        className={`text-[11px] font-bold uppercase px-2.5 py-0.5 rounded ${
                           isOverdue
-                            ? "bg-rose-500/20 text-rose-300 border border-rose-500/40"
+                            ? "bg-rose-900/60 text-rose-200 border border-rose-500"
                             : isCompleted
-                            ? "bg-emerald-500/20 text-emerald-300 border border-emerald-500/40"
-                            : "bg-blue-500/20 text-blue-300 border border-blue-500/40"
+                            ? "bg-emerald-900/60 text-emerald-200 border border-emerald-500"
+                            : "bg-blue-900/60 text-blue-200 border border-blue-500"
                         }`}
                       >
                         {c.status}
@@ -169,12 +183,12 @@ export const CommitmentTrackerTab: React.FC<CommitmentTrackerTabProps> = ({
                       {/* Urgency Badge */}
                       {c.urgency_level && (
                         <span
-                          className={`text-[10px] font-bold uppercase px-2 py-0.5 rounded ${
+                          className={`text-[11px] font-bold uppercase px-2.5 py-0.5 rounded ${
                             c.urgency_level === "CRITICAL"
-                              ? "bg-rose-600/30 text-rose-200 border border-rose-500 animate-pulse"
+                              ? "bg-rose-600 text-white font-extrabold animate-pulse"
                               : c.urgency_level === "HIGH"
-                              ? "bg-amber-500/20 text-amber-300 border border-amber-500/30"
-                              : "bg-slate-800 text-slate-400"
+                              ? "bg-amber-600/40 text-amber-200 border border-amber-500 font-bold"
+                              : "bg-slate-800 text-slate-300 border border-slate-700"
                           }`}
                         >
                           {c.urgency_level}
@@ -182,29 +196,29 @@ export const CommitmentTrackerTab: React.FC<CommitmentTrackerTabProps> = ({
                       )}
                     </div>
 
-                    <p className="text-xs text-slate-300 leading-relaxed">{c.content}</p>
+                    <p className="text-xs sm:text-sm text-slate-200 leading-relaxed font-normal">{c.content}</p>
 
                     {/* Metadata: Assignee, Deadline, Days Remaining */}
-                    <div className="flex flex-wrap items-center gap-4 pt-2 text-xs text-slate-400">
+                    <div className="flex flex-wrap items-center gap-5 pt-2 text-xs sm:text-sm text-slate-300">
                       {c.assignee && (
                         <span className="flex items-center gap-1.5">
-                          <User className="w-3.5 h-3.5 text-indigo-400" />
+                          <User className="w-4 h-4 text-blue-400" />
                           <span>
-                            Assignee: <strong className="text-slate-200">{c.assignee}</strong>
+                            Assignee: <strong className="text-white">{c.assignee}</strong>
                           </span>
                         </span>
                       )}
                       {c.deadline && (
                         <span className="flex items-center gap-1.5">
-                          <Calendar className="w-3.5 h-3.5 text-slate-400" />
+                          <Calendar className="w-4 h-4 text-slate-400" />
                           <span>
-                            Deadline: <strong className="text-slate-200">{c.deadline}</strong>
+                            Deadline: <strong className="text-white">{c.deadline}</strong>
                           </span>
                         </span>
                       )}
                       {c.days_remaining !== undefined && !isCompleted && (
                         <span
-                          className={`flex items-center gap-1.5 font-semibold ${
+                          className={`flex items-center gap-1.5 font-bold ${
                             c.days_remaining < 0
                               ? "text-rose-400"
                               : c.days_remaining <= 2
@@ -212,7 +226,7 @@ export const CommitmentTrackerTab: React.FC<CommitmentTrackerTabProps> = ({
                               : "text-emerald-400"
                           }`}
                         >
-                          <Clock className="w-3.5 h-3.5" />
+                          <Clock className="w-4 h-4" />
                           {c.days_remaining < 0
                             ? `Overdue by ${Math.abs(c.days_remaining)} days`
                             : c.days_remaining === 0
@@ -228,12 +242,12 @@ export const CommitmentTrackerTab: React.FC<CommitmentTrackerTabProps> = ({
                     <button
                       onClick={() => handleMarkComplete(c.id)}
                       disabled={updatingId === c.id}
-                      className="shrink-0 px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-emerald-600/20 hover:border-emerald-500/40 border border-slate-700 text-slate-300 hover:text-emerald-300 text-xs font-semibold flex items-center gap-1.5 transition-all"
+                      className="shrink-0 px-4 py-2.5 rounded-lg bg-slate-800 hover:bg-emerald-600 hover:border-emerald-500 border border-slate-600 text-slate-200 hover:text-white text-xs sm:text-sm font-bold flex items-center gap-2 transition-all shadow-sm"
                     >
                       {updatingId === c.id ? (
-                        <Loader2 className="w-3.5 h-3.5 animate-spin text-emerald-400" />
+                        <Loader2 className="w-4 h-4 animate-spin text-emerald-400" />
                       ) : (
-                        <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
+                        <CheckCircle2 className="w-4 h-4 text-emerald-400" />
                       )}
                       <span>Mark Complete</span>
                     </button>
