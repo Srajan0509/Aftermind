@@ -1,5 +1,6 @@
 import json
-from typing import Optional
+import logging
+from typing import Optional, Any
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
 from sqlalchemy.orm import Session
 
@@ -22,10 +23,36 @@ from .schemas import (
 )
 from .service import ingestion_service
 
+logger = logging.getLogger("data_ingestion.routes")
+
 router = APIRouter(
     prefix="/api/ingest",
     tags=["Module 1: Multi-Source AI Data Ingestion"],
 )
+
+
+def _clean_form_str(val: Any) -> Optional[str]:
+    """Extracts string value if passed, or None if omitted or default Form object."""
+    if val is None or not isinstance(val, str):
+        return None
+    cleaned = val.strip()
+    return cleaned if cleaned else None
+
+
+def _read_upload_file_bytes(file: UploadFile) -> bytes:
+    """Safely extracts bytes from an UploadFile supporting both spooled and memory buffers."""
+    try:
+        if hasattr(file, "file") and hasattr(file.file, "read"):
+            data = file.file.read()
+            if isinstance(data, bytes):
+                return data
+        if hasattr(file, "read"):
+            data = file.read()
+            if isinstance(data, bytes):
+                return data
+        return b""
+    except Exception as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Failed to read uploaded file: {e}")
 
 
 @router.post("/text", response_model=IngestionResponse, status_code=status.HTTP_201_CREATED)
@@ -48,7 +75,7 @@ def ingest_text_endpoint(
 
 
 @router.post("/document", response_model=IngestionResponse, status_code=status.HTTP_201_CREATED)
-async def ingest_document_endpoint(
+def ingest_document_endpoint(
     file: UploadFile = File(...),
     company_id: Optional[str] = Form(None, description="Target company UUID (optional for standalone parsing)"),
     title: Optional[str] = Form(None, description="Optional title for the document source"),
@@ -63,35 +90,41 @@ async def ingest_document_endpoint(
     Upload and ingest document files (PDF, DOCX, TXT).
     Parses content with PyMuPDF/XML ElementTree, validates MIME and integrity, and routes to Module 2/3.
     """
-    if not file.filename:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Missing file name.")
+    if not file or not file.filename:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Missing file or filename.")
 
-    try:
-        content = await file.read()
-    except Exception as e:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Failed to read file: {e}")
+    content = _read_upload_file_bytes(file)
 
     if len(content) == 0:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Uploaded file is empty (0 bytes).")
 
+    # Clean default Form values
+    c_id = _clean_form_str(company_id)
+    t_val = _clean_form_str(title)
+    p_id = _clean_form_str(project_id)
+    a_id = _clean_form_str(author_id)
+    m_val = _clean_form_str(metadata)
+    st_val = source_type if isinstance(source_type, IngestionSourceType) else IngestionSourceType.DOCUMENT
+    ext_trig = trigger_extraction if isinstance(trigger_extraction, bool) else True
+
     extra_meta = {}
-    if metadata:
+    if m_val:
         try:
-            extra_meta = json.loads(metadata)
+            extra_meta = json.loads(m_val)
         except Exception:
-            extra_meta = {"raw_metadata": metadata}
+            extra_meta = {"raw_metadata": m_val}
 
     try:
         return ingestion_service.ingest_document(
             content=content,
             filename=file.filename,
-            company_id=company_id,
+            company_id=c_id,
             db=db,
-            title=title,
-            project_id=project_id,
-            author_id=author_id,
-            source_type=source_type,
-            trigger_extraction=trigger_extraction,
+            title=t_val,
+            project_id=p_id,
+            author_id=a_id,
+            source_type=st_val,
+            trigger_extraction=ext_trig,
             extra_metadata=extra_meta
         )
     except DocumentParsingError as e:
@@ -103,7 +136,7 @@ async def ingest_document_endpoint(
 
 
 @router.post("/audio", response_model=IngestionResponse, status_code=status.HTTP_201_CREATED)
-async def ingest_audio_endpoint(
+def ingest_audio_endpoint(
     file: UploadFile = File(...),
     company_id: Optional[str] = Form(None, description="Target company UUID (optional for standalone parsing)"),
     title: Optional[str] = Form(None, description="Optional title for the audio source"),
@@ -119,36 +152,43 @@ async def ingest_audio_endpoint(
     Upload and ingest audio recordings or voice notes (MP3, WAV, M4A).
     Transcribes audio via OpenAI Whisper or Google Gemini, validates MIME, and routes to Module 2/3.
     """
-    if not file.filename:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Missing file name.")
+    if not file or not file.filename:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Missing file or filename.")
 
-    try:
-        content = await file.read()
-    except Exception as e:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Failed to read file: {e}")
+    content = _read_upload_file_bytes(file)
 
     if len(content) == 0:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Uploaded audio file is empty (0 bytes).")
 
+    # Clean default Form values
+    c_id = _clean_form_str(company_id)
+    t_val = _clean_form_str(title)
+    p_id = _clean_form_str(project_id)
+    a_id = _clean_form_str(author_id)
+    l_val = _clean_form_str(language)
+    m_val = _clean_form_str(metadata)
+    st_val = source_type if isinstance(source_type, IngestionSourceType) else IngestionSourceType.VOICE_NOTE
+    ext_trig = trigger_extraction if isinstance(trigger_extraction, bool) else True
+
     extra_meta = {}
-    if metadata:
+    if m_val:
         try:
-            extra_meta = json.loads(metadata)
+            extra_meta = json.loads(m_val)
         except Exception:
-            extra_meta = {"raw_metadata": metadata}
+            extra_meta = {"raw_metadata": m_val}
 
     try:
         return ingestion_service.ingest_audio(
             audio_bytes=content,
             filename=file.filename,
-            company_id=company_id,
+            company_id=c_id,
             db=db,
-            title=title,
-            project_id=project_id,
-            author_id=author_id,
-            language=language,
-            source_type=source_type,
-            trigger_extraction=trigger_extraction,
+            title=t_val,
+            project_id=p_id,
+            author_id=a_id,
+            language=l_val,
+            source_type=st_val,
+            trigger_extraction=ext_trig,
             extra_metadata=extra_meta
         )
     except AudioTranscriptionError as e:

@@ -11,7 +11,7 @@ class IngestionSettings(BaseSettings):
     OPENAI_API_KEY: str = ""
     GEMINI_API_KEY: str = ""
     OPENAI_WHISPER_MODEL: str = "whisper-1"
-    GEMINI_AUDIO_MODEL: str = "gemini-1.5-flash"
+    GEMINI_AUDIO_MODEL: str = "gemini-2.0-flash"
 
     # Testing flag: Mock transcription permitted ONLY for automated tests
     ALLOW_TEST_MOCK_TRANSCRIBER: bool = False
