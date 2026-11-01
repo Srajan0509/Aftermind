@@ -9,3 +9,6 @@ ENV/
 .coverage
 htmlcov/
 *.log
+*.db
+*.sqlite
+*.sqlite3

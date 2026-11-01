@@ -17,7 +17,7 @@ def extract_business_memories(request: ExtractionRequest):
     """Extract structured business memories from standardized source text."""
     if len(request.extracted_text) > settings.max_input_characters:
         raise HTTPException(
-            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            status_code=status.HTTP_413_CONTENT_TOO_LARGE,
             detail=f"Input exceeds the maximum of {settings.max_input_characters} characters.",
         )
     try:
@@ -35,13 +35,19 @@ def extract_business_memories(request: ExtractionRequest):
 @router.get("/health")
 def extraction_health():
     """Report module configuration without exposing credentials."""
+    configured = False
+    if settings.llm_provider == "openai":
+        configured = bool(settings.openai_api_key)
+    elif settings.llm_provider == "gemini":
+        configured = bool(settings.gemini_api_key)
+    elif settings.llm_provider == "groq":
+        configured = bool(settings.groq_api_key)
+    elif settings.llm_provider == "openrouter":
+        configured = bool(settings.openrouter_api_key)
+
     return {
         "status": "healthy",
         "module": "Module 2: Intelligent Memory Extraction",
         "provider": settings.llm_provider,
-        "provider_configured": (
-            bool(settings.openai_api_key) if settings.llm_provider == "openai"
-            else bool(settings.gemini_api_key) if settings.llm_provider == "gemini"
-            else False
-        ),
+        "provider_configured": configured,
     }

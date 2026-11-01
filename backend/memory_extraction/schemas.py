@@ -66,6 +66,30 @@ class ExtractedMemory(BaseModel):
     entities: list[EntityMention] = Field(default_factory=list)
     meta_info: dict[str, Any] = Field(default_factory=dict)
 
+    @field_validator("memory_type", mode="before")
+    @classmethod
+    def normalize_memory_type(cls, value: Any) -> Any:
+        if isinstance(value, str):
+            val = value.strip().lower()
+            aliases = {
+                "commitment": MemoryType.EMPLOYEE_COMMITMENT.value,
+                "commitments": MemoryType.EMPLOYEE_COMMITMENT.value,
+                "requirement": MemoryType.CLIENT_REQUIREMENT.value,
+                "requirements": MemoryType.CLIENT_REQUIREMENT.value,
+                "client_requirements": MemoryType.CLIENT_REQUIREMENT.value,
+                "deadline": MemoryType.IMPORTANT_DEADLINE.value,
+                "deadlines": MemoryType.IMPORTANT_DEADLINE.value,
+                "discussion": MemoryType.MEETING_DISCUSSION.value,
+                "discussions": MemoryType.MEETING_DISCUSSION.value,
+                "decision": MemoryType.DECISION.value,
+                "decisions": MemoryType.DECISION.value,
+                "general": MemoryType.GENERAL_INFO.value,
+                "info": MemoryType.GENERAL_INFO.value,
+            }
+            if val in aliases:
+                return aliases[val]
+        return value
+
     def to_memory_create_payload(self, request: ExtractionRequest) -> dict[str, Any]:
         """Map this extraction to Module 3's existing MemoryCreate contract."""
         details = dict(self.meta_info)

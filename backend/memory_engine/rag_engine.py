@@ -20,6 +20,8 @@ class RAGEngine:
     def __init__(self):
         self.openai_key = memory_config.OPENAI_API_KEY or os.getenv("OPENAI_API_KEY")
         self.gemini_key = memory_config.GEMINI_API_KEY or os.getenv("GEMINI_API_KEY")
+        self.groq_key = memory_config.GROQ_API_KEY or os.getenv("GROQ_API_KEY")
+        self.openrouter_key = memory_config.OPENROUTER_API_KEY or os.getenv("OPENROUTER_API_KEY")
         self.llm_provider = memory_config.LLM_PROVIDER
 
     def answer_question(self, db: Session, req: RAGChatRequest) -> RAGChatResponse:
@@ -160,7 +162,68 @@ class RAGEngine:
             except Exception as e:
                 logger.warning(f"OpenAI generation failed: {e}")
 
-        # 3. Grounded Synthesizer (Fallback when API keys are not yet provided)
+        # 3. Try Groq
+        if (self.llm_provider in ["auto", "groq"]) and self.groq_key:
+            try:
+                resp = httpx.post(
+                    "https://api.groq.com/openai/v1/chat/completions",
+                    headers={"Authorization": f"Bearer {self.groq_key}"},
+                    json={
+                        "model": memory_config.GROQ_MODEL,
+                        "messages": [
+                            {
+                                "role": "system",
+                                "content": "You are AFTERMIND AI. Answer user questions using ONLY the provided business memories. Always cite sources (e.g., [Source: Meeting Title])."
+                            },
+                            {
+                                "role": "user",
+                                "content": f"Context:\n{context}\n\nQuestion: {question}"
+                            }
+                        ],
+                        "temperature": 0.2
+                    },
+                    timeout=15.0
+                )
+                if resp.status_code == 200:
+                    data = resp.json()
+                    return data["choices"][0]["message"]["content"].strip()
+            except Exception as e:
+                logger.warning(f"Groq generation failed: {e}")
+
+        # 4. Try OpenRouter
+        if (self.llm_provider in ["auto", "openrouter"]) and self.openrouter_key:
+            try:
+                resp = httpx.post(
+                    "https://openrouter.ai/api/v1/chat/completions",
+                    headers={
+                        "Authorization": f"Bearer {self.openrouter_key}",
+                        "HTTP-Referer": "http://localhost:3000",
+                        "X-Title": "AFTERMIND"
+                    },
+                    json={
+                        "model": memory_config.OPENROUTER_MODEL,
+                        "messages": [
+                            {
+                                "role": "system",
+                                "content": "You are AFTERMIND AI. Answer user questions using ONLY the provided business memories. Always cite sources (e.g., [Source: Meeting Title])."
+                            },
+                            {
+                                "role": "user",
+                                "content": f"Context:\n{context}\n\nQuestion: {question}"
+                            }
+                        ],
+                        "temperature": 0.2,
+                        "max_tokens": 1000
+                    },
+                    timeout=15.0
+                )
+                if resp.status_code == 200:
+                    data = resp.json()
+                    return data["choices"][0]["message"]["content"].strip()
+            except Exception as e:
+                logger.warning(f"OpenRouter generation failed: {e}")
+
+        # 5. Grounded Synthesizer (Fallback when API keys are not yet provided)
         return self._synthesize_grounded_answer(question=question, context=context, source_refs=source_refs)
 
     def _synthesize_grounded_answer(self, question: str, context: str, source_refs: List[SourceReference]) -> str:
