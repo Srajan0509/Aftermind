@@ -221,14 +221,22 @@ export const api = {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        query,
+        question: query,          // backend RAGChatRequest expects 'question'
         company_id: companyId,
         conversation_history: history,
       }),
     });
     if (!res.ok) {
       const err = await res.json().catch(() => ({ detail: "Assistant chat failed" }));
-      throw new Error(err.detail || "Assistant chat failed");
+      let msg = "Assistant chat failed";
+      if (err?.detail) {
+        msg = Array.isArray(err.detail)
+          ? err.detail.map((d: any) => d.msg || (d.loc ? d.loc.join(".") : "") || JSON.stringify(d)).join(", ")
+          : typeof err.detail === "object"
+          ? JSON.stringify(err.detail)
+          : String(err.detail);
+      }
+      throw new Error(msg);
     }
     return res.json();
   },

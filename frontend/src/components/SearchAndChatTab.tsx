@@ -64,11 +64,18 @@ export const SearchAndChatTab: React.FC<SearchAndChatTabProps> = ({ companyId, o
         },
       ]);
     } catch (err: any) {
+      // Safely extract a readable message from any thrown value
+      const errMsg =
+        err instanceof Error
+          ? err.message
+          : typeof err === "string"
+          ? err
+          : err?.message || err?.detail || JSON.stringify(err) || "Failed to reach AI Assistant.";
       setChatMessages((prev) => [
         ...prev,
         {
           role: "assistant",
-          content: `⚠️ Error retrieving answer: ${err.message || "Failed to reach AI Assistant."}`,
+          content: `⚠️ Error retrieving answer: ${errMsg}`,
         },
       ]);
     } finally {

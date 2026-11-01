@@ -1,4 +1,5 @@
 """Orchestration and validation for business-memory extraction."""
+import logging
 from typing import Any
 
 from pydantic import ValidationError
@@ -8,6 +9,8 @@ from .llm_client import LLMClient, LLMConfigurationError, LLMResponseError
 from .schemas import (
     EntityMention, ExtractionRequest, ExtractionResponse, ExtractedMemory,
 )
+
+logger = logging.getLogger(__name__)
 
 
 class ExtractionError(RuntimeError):
@@ -34,8 +37,35 @@ class MemoryExtractor:
             if not isinstance(raw_memories, list) or not isinstance(raw_entities, list):
                 raise ExtractionError("LLM response 'memories' and 'entities' must be arrays.")
 
-            memories = [ExtractedMemory.model_validate(item) for item in raw_memories]
-            entities = [EntityMention.model_validate(item) for item in raw_entities]
+            memories: list[ExtractedMemory] = []
+            for item in raw_memories:
+                # Skip None, empty strings, empty dicts, and non-dict/non-str types
+                if not item:
+                    continue
+                if isinstance(item, str) and not item.strip():
+                    continue
+                if not isinstance(item, (str, dict)):
+                    logger.warning("Skipping unexpected memory item type %r: %s", type(item).__name__, item)
+                    continue
+                try:
+                    memories.append(ExtractedMemory.model_validate(item))
+                except Exception as exc:
+                    logger.warning("Skipping malformed memory item %r: %s", item, exc)
+
+            entities: list[EntityMention] = []
+            for item in raw_entities:
+                # Skip None, empty strings, empty dicts, and non-dict/non-str types
+                if not item:
+                    continue
+                if isinstance(item, str) and not item.strip():
+                    continue
+                if not isinstance(item, (str, dict)):
+                    logger.warning("Skipping unexpected entity item type %r: %s", type(item).__name__, item)
+                    continue
+                try:
+                    entities.append(EntityMention.model_validate(item))
+                except Exception as exc:
+                    logger.warning("Skipping malformed entity item %r: %s", item, exc)
 
             # Retain entities in each relevant memory's metadata and output top-level entities.
             known = {(e.entity_type.value, e.name.casefold()) for e in entities}
