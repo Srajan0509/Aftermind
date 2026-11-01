@@ -3,7 +3,7 @@ from datetime import datetime, timezone
 from enum import Enum
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 
 class MemoryType(str, Enum):
@@ -33,21 +33,37 @@ class EntityMention(BaseModel):
 
 class ExtractionRequest(BaseModel):
     """Text and identifiers supplied by the ingestion/source pipeline."""
-    company_id: str = Field(min_length=1)
-    source_id: str = Field(min_length=1)
-    extracted_text: str = Field(min_length=1)
+    company_id: str = Field(default="default-org")
+    source_id: str = Field(default="")
+    extracted_text: str = Field(..., min_length=1)
+    text: str | None = None
+    title: str | None = None
     filename: str | None = None
     source_type: str | None = None
     project_id: str | None = None
     author_id: str | None = None
     metadata: dict[str, Any] = Field(default_factory=dict)
 
+    @model_validator(mode="before")
+    @classmethod
+    def normalize_fields(cls, data: Any):
+        if isinstance(data, dict):
+            if "text" in data and not data.get("extracted_text"):
+                data["extracted_text"] = data["text"]
+            if not data.get("source_id"):
+                import uuid
+                data["source_id"] = f"src-{uuid.uuid4().hex[:8]}"
+            if not data.get("company_id"):
+                data["company_id"] = "default-org"
+        return data
+
     @field_validator("extracted_text")
     @classmethod
     def reject_blank_text(cls, value: str) -> str:
-        if not value.strip():
+        if not value or not str(value).strip():
             raise ValueError("extracted_text cannot be blank")
-        return value.strip()
+        return str(value).strip()
+
 
 
 class ExtractedMemory(BaseModel):

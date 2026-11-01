@@ -121,15 +121,24 @@ export const api = {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
+        extracted_text: text,
         text,
-        title: title || "Ingested Document",
-        company_id: companyId,
-        source_id: sourceId,
+        title: title || "Executive Discussion",
+        company_id: companyId || "default-org",
+        source_id: sourceId || `src-${Date.now()}`,
       }),
     });
     if (!res.ok) {
       const err = await res.json().catch(() => ({ detail: "Memory extraction failed" }));
-      throw new Error(err.detail || "Memory extraction failed");
+      let msg = "Memory extraction failed";
+      if (err?.detail) {
+        msg = Array.isArray(err.detail)
+          ? err.detail.map((d: any) => d.msg || (d.loc ? d.loc.join(".") : "") || JSON.stringify(d)).join(", ")
+          : typeof err.detail === "object"
+          ? JSON.stringify(err.detail)
+          : String(err.detail);
+      }
+      throw new Error(msg);
     }
     return res.json();
   },
@@ -139,14 +148,23 @@ export const api = {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
+        extracted_text: text,
         text,
-        source_title: title || "Ingested Document",
-        company_id: companyId,
+        source_title: title || "Executive Discussion",
+        company_id: companyId || "default-org",
       }),
     });
     if (!res.ok) {
       const err = await res.json().catch(() => ({ detail: "Extraction and storage failed" }));
-      throw new Error(err.detail || "Extraction and storage failed");
+      let msg = "Extraction and storage failed";
+      if (err?.detail) {
+        msg = Array.isArray(err.detail)
+          ? err.detail.map((d: any) => d.msg || (d.loc ? d.loc.join(".") : "") || JSON.stringify(d)).join(", ")
+          : typeof err.detail === "object"
+          ? JSON.stringify(err.detail)
+          : String(err.detail);
+      }
+      throw new Error(msg);
     }
     return res.json();
   },
