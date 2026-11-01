@@ -264,7 +264,7 @@ export const IngestionTab: React.FC<IngestionTabProps> = ({
               Extracted Content Preview:
             </label>
             <div className="p-4 rounded-lg bg-slate-950 border border-slate-800 text-xs sm:text-sm text-slate-200 max-h-56 overflow-y-auto font-mono whitespace-pre-wrap leading-relaxed">
-              {result.transcription || result.preview || "No content preview available."}
+              {result.extracted_text || result.transcript || result.transcription || result.preview || "No content preview available."}
             </div>
           </div>
 
@@ -275,7 +275,7 @@ export const IngestionTab: React.FC<IngestionTabProps> = ({
             </p>
             <button
               onClick={() => {
-                const text = result.transcription || result.preview || "";
+                const text = result.extracted_text || result.transcript || result.transcription || result.preview || "";
                 onSendToExtraction(text, result.title || "Ingested Document");
               }}
               className="px-5 py-2.5 rounded-lg bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs sm:text-sm flex items-center gap-2 shadow-md shadow-blue-600/30"

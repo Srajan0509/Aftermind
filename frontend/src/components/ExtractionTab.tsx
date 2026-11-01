@@ -81,6 +81,33 @@ export const ExtractionTab: React.FC<ExtractionTabProps> = ({
     }
   };
 
+  const loadSampleMeeting = () => {
+    setTitle("AFTERMIND Executive Board & Product Strategy Meeting");
+    setText(`AFTERMIND EXECUTIVE BOARD & PRODUCT STRATEGY MEETING
+Date: November 1, 2026
+Attendees: Sarah Jenkins (VP Product), David Miller (Chief Architect), Srajan Shetty (Lead Backend Engineer), Nirmal Yadav (Frontend Lead), Amrita Sharma (AI Ingestion Specialist)
+Organization: Acme Global Technologies (default-org)
+
+1. EXECUTIVE SUMMARY & STRATEGIC OVERVIEW
+The leadership team met to review the Q4 release roadmap for the enterprise decision intelligence platform. The primary goal is reducing organizational knowledge loss and tracking cross-functional commitments across engineering and product teams.
+
+2. ARCHITECTURAL & STRATEGIC DECISIONS
+- Decision 1 (Database Architecture): The architecture team officially decided to use PostgreSQL with pgvector hosted on Supabase for production rather than self-hosted vector databases, ensuring ACID compliance and automated backups.
+- Decision 2 (Authentication Standard): The board approved mandating OAuth 2.0 with Okta and Google Enterprise SSO for all customer tenants starting in Q1 2027.
+- Decision 3 (Model Selection): The AI committee decided to utilize Google Gemini 2.0 Flash as the default multimodal reasoning engine, with Groq LLaMA-3.3-70B configured as the ultra-low latency fallback.
+
+3. CLIENT REQUIREMENTS (ACME FINANCIAL GROUP)
+- Requirement 1: Acme Financial requires end-to-end data encryption at rest (AES-256) and automated SOC-2 compliance audit logging for every memory query.
+- Requirement 2: The mobile client must support real-time audio voice-note ingestion in MP3 and M4A formats with transcription accuracy exceeding 95%.
+- Requirement 3: Multi-tenant data segregation must be strictly enforced at the database row level using company_id tenant filters.
+
+4. ASSIGNED COMMITMENTS & CRITICAL DEADLINES
+- Commitment 1: Srajan committed to finalizing all backend REST API endpoints and PostgreSQL pgvector integration by November 8, 2026. (Assignee: Srajan Shetty, Priority: CRITICAL)
+- Commitment 2: Nirmal committed to delivering the executive dashboard and commitment tracking UI by November 12, 2026. (Assignee: Nirmal Yadav, Priority: HIGH)
+- Commitment 3: Amrita committed to completing document parsers for PDF and DOCX multi-source ingestion with automatic Whisper fallback by November 6, 2026. (Assignee: Amrita Sharma, Priority: HIGH)
+- Commitment 4: David Miller committed to performing security penetration testing and load testing up to 10,000 concurrent requests by November 18, 2026. (Assignee: David Miller, Priority: MEDIUM)`);
+  };
+
   return (
     <div className="max-w-4xl mx-auto space-y-6 animate-fadeIn">
       {/* Back to Dashboard Button */}
@@ -123,11 +150,21 @@ export const ExtractionTab: React.FC<ExtractionTabProps> = ({
         </div>
 
         <div>
-          <label className="block text-xs font-bold uppercase tracking-wider text-slate-200 mb-2">
-            Raw Text / Discussion Transcript
-          </label>
+          <div className="flex items-center justify-between mb-2">
+            <label className="block text-xs font-bold uppercase tracking-wider text-slate-200">
+              Raw Text / Discussion Transcript
+            </label>
+            <button
+              type="button"
+              onClick={loadSampleMeeting}
+              className="text-xs text-blue-400 hover:text-blue-300 font-bold underline underline-offset-4 flex items-center gap-1.5 cursor-pointer"
+            >
+              <Sparkles className="w-3.5 h-3.5 text-blue-400" />
+              <span>Load Sample Meeting Data</span>
+            </button>
+          </div>
           <textarea
-            rows={7}
+            rows={8}
             value={text}
             onChange={(e) => setText(e.target.value)}
             placeholder="Paste meeting transcript, client requirements, or document notes here... (e.g. Srajan committed to finalize backend API by Friday. We decided to use PostgreSQL for production.)"
