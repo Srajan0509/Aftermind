@@ -7,6 +7,7 @@ guess, complete missing names, invent dates, or turn suggestions into decisions.
 
 Return exactly one JSON object with this shape:
 {
+  "source_summary": "concise 1-2 sentence executive summary of the document or discussion",
   "memories": [
     {
       "memory_type": "decision | client_requirement | employee_commitment | important_deadline | meeting_discussion | general_info",

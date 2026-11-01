@@ -46,12 +46,22 @@ class MemoryExtractor:
                         entities.append(entity)
                         known.add(key)
 
+            raw_summary = raw.get("source_summary") or raw.get("summary")
+            if raw_summary and isinstance(raw_summary, str) and raw_summary.strip():
+                source_summary = raw_summary.strip()
+            elif memories:
+                types = list(dict.fromkeys(m.memory_type.value.replace("_", " ") for m in memories))
+                source_summary = f"Identified {len(memories)} business items ({', '.join(types[:3])})."
+            else:
+                source_summary = f"Extracted {len(memories)} business memories from source."
+
             return ExtractionResponse(
                 company_id=request.company_id,
                 source_id=request.source_id,
                 memories=memories,
                 entities=entities,
                 memories_count=len(memories),
+                source_summary=source_summary,
                 module3_payloads=[
                     memory.to_memory_create_payload(request) for memory in memories
                 ],

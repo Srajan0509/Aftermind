@@ -75,13 +75,21 @@ class MemoryService:
         return person
 
     def create_source(self, db: Session, req: SourceCreate) -> Source:
-        # Validate company exists
-        company = db.query(Company).filter(Company.id == req.company_id).first()
+        # Validate or auto-provision default company
+        company = db.query(Company).filter(
+            (Company.id == req.company_id) | (Company.name == req.company_id)
+        ).first()
         if not company:
-            raise ValueError(f"Company {req.company_id} does not exist.")
+            if req.company_id in ("default-org", "default", ""):
+                company = Company(id="default-org", name="default-org", domain="aftermind.internal")
+                db.add(company)
+                db.commit()
+                db.refresh(company)
+            else:
+                raise ValueError(f"Company {req.company_id} does not exist.")
 
         source = Source(
-            company_id=req.company_id,
+            company_id=company.id,
             project_id=req.project_id,
             author_id=req.author_id,
             title=req.title,
@@ -103,13 +111,37 @@ class MemoryService:
         Ingest a structured memory item (decision, requirement, commitment, deadline).
         Generates vector embedding, stores source reference, and links decision history.
         """
+        # Validate or auto-provision default company
+        company = db.query(Company).filter(
+            (Company.id == req.company_id) | (Company.name == req.company_id)
+        ).first()
+        if not company:
+            if req.company_id in ("default-org", "default", ""):
+                company = Company(id="default-org", name="default-org", domain="aftermind.internal")
+                db.add(company)
+                db.commit()
+                db.refresh(company)
+            else:
+                raise ValueError(f"Company {req.company_id} does not exist.")
+            db.refresh(company)
+
         # Validate source reference
         source = db.query(Source).filter(
             Source.id == req.source_id,
-            Source.company_id == req.company_id
+            (Source.company_id == req.company_id) | (Source.company_id == company.id)
         ).first()
         if not source:
-            raise ValueError(f"Source with id {req.source_id} not found for company {req.company_id}")
+            source = Source(
+                id=req.source_id,
+                company_id=company.id,
+                title=req.title,
+                source_type=SourceType.DOCUMENT.value,
+                raw_content=req.content,
+                meta_info={"auto_created": True}
+            )
+            db.add(source)
+            db.commit()
+            db.refresh(source)
 
         # If project_id not provided, inherit from source if available
         project_id = req.project_id or source.project_id

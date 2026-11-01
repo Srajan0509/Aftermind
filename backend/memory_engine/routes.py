@@ -33,7 +33,17 @@ router = APIRouter(prefix="/api", tags=["Module 3: Connected Long-Term Memory & 
 # -------------------------------------------------------------
 # Entity Management (Companies, Projects, People, Sources)
 # -------------------------------------------------------------
+@router.get("/companies/", response_model=List[CompanyResponse])
+@router.get("/companies", response_model=List[CompanyResponse])
+def list_companies(db: Session = Depends(get_db)):
+    """List all registered client companies / tenants."""
+    from .models import Company
+    companies = db.query(Company).order_by(Company.created_at.desc()).all()
+    return [CompanyResponse.model_validate(c) for c in companies]
+
+
 @router.post("/companies/", response_model=CompanyResponse, status_code=status.HTTP_201_CREATED)
+@router.post("/companies", response_model=CompanyResponse, status_code=status.HTTP_201_CREATED)
 def create_company(req: CompanyCreate, db: Session = Depends(get_db)):
     """Register a new client company / tenant organization."""
     company = memory_service.get_or_create_company(db, req)
@@ -41,6 +51,7 @@ def create_company(req: CompanyCreate, db: Session = Depends(get_db)):
 
 
 @router.post("/projects/", response_model=ProjectResponse, status_code=status.HTTP_201_CREATED)
+@router.post("/projects", response_model=ProjectResponse, status_code=status.HTTP_201_CREATED)
 def create_project(req: ProjectCreate, db: Session = Depends(get_db)):
     """Register a project under a company."""
     project = memory_service.get_or_create_project(db, req)
@@ -48,6 +59,7 @@ def create_project(req: ProjectCreate, db: Session = Depends(get_db)):
 
 
 @router.post("/people/", response_model=PersonResponse, status_code=status.HTTP_201_CREATED)
+@router.post("/people", response_model=PersonResponse, status_code=status.HTTP_201_CREATED)
 def create_person(req: PersonCreate, db: Session = Depends(get_db)):
     """Register an employee, stakeholder or client contact."""
     person = memory_service.get_or_create_person(db, req)
@@ -55,6 +67,7 @@ def create_person(req: PersonCreate, db: Session = Depends(get_db)):
 
 
 @router.post("/sources/", response_model=SourceResponse, status_code=status.HTTP_201_CREATED)
+@router.post("/sources", response_model=SourceResponse, status_code=status.HTTP_201_CREATED)
 def create_source(req: SourceCreate, db: Session = Depends(get_db)):
     """Register an original source (meeting transcript, document, voice note)."""
     try:
@@ -68,6 +81,7 @@ def create_source(req: SourceCreate, db: Session = Depends(get_db)):
 # Memory Endpoints
 # -------------------------------------------------------------
 @router.post("/memories/", response_model=MemoryResponse, status_code=status.HTTP_201_CREATED)
+@router.post("/memories", response_model=MemoryResponse, status_code=status.HTTP_201_CREATED)
 def create_memory(req: MemoryCreate, db: Session = Depends(get_db)):
     """
     Store an extracted business memory item with vector embedding and source reference.
@@ -80,6 +94,7 @@ def create_memory(req: MemoryCreate, db: Session = Depends(get_db)):
 
 
 @router.get("/memories/", response_model=List[MemoryResponse])
+@router.get("/memories", response_model=List[MemoryResponse])
 def list_memories(
     company_id: str = Query(..., description="Company ID required to enforce tenant isolation"),
     project_id: Optional[str] = Query(None, description="Filter by project"),
@@ -146,6 +161,7 @@ def get_project_memories(
 # Semantic Search & RAG
 # -------------------------------------------------------------
 @router.post("/search/", response_model=SemanticSearchResponse)
+@router.post("/search", response_model=SemanticSearchResponse)
 def semantic_search(req: SemanticSearchRequest, db: Session = Depends(get_db)):
     """
     Natural language semantic search over business memories using vector similarity and metadata filtering.
@@ -170,6 +186,7 @@ def semantic_search(req: SemanticSearchRequest, db: Session = Depends(get_db)):
 
 
 @router.post("/chat/", response_model=RAGChatResponse)
+@router.post("/chat", response_model=RAGChatResponse)
 def rag_chat(req: RAGChatRequest, db: Session = Depends(get_db)):
     """
     RAG Pipeline: Answers employee questions using retrieved business memories.

@@ -1,4 +1,4 @@
-﻿"""LLM client with auto-detection and fallback chain.
+"""LLM client with auto-detection and fallback chain.
 
 Priority order: groq â†’ openrouter â†’ openai â†’ gemini
 If LLM_PROVIDER is explicitly set and the key is present, that provider is used first.
@@ -54,7 +54,7 @@ def _detect_provider() -> str:
         return "gemini"
 
     raise LLMConfigurationError(
-        "No LLM API key is configured. "
+        "No LLM API key is configured (LLM provider is not configured). "
         "Set at least one of: GROQ_API_KEY, OPENROUTER_API_KEY, OPENAI_API_KEY, GEMINI_API_KEY."
     )
 

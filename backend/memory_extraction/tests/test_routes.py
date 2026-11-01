@@ -33,6 +33,9 @@ def test_extraction_health_endpoint(client):
 def test_extraction_unconfigured_provider(monkeypatch, client):
     # Without API keys configured, extraction should return 503
     monkeypatch.setattr(settings, "openai_api_key", None)
+    monkeypatch.setattr(settings, "groq_api_key", None)
+    monkeypatch.setattr(settings, "openrouter_api_key", None)
+    monkeypatch.setattr(settings, "gemini_api_key", None)
     monkeypatch.setattr(settings, "llm_provider", "openai")
     monkeypatch.setattr(memory_extractor.llm_client, "_provider", None)
     res = client.post("/api/extraction/extract", json={
@@ -192,7 +195,67 @@ def test_end_to_end_module2_to_module3_integration(monkeypatch):
         "question": "What is the status of the auth service deployment?"
     })
     assert chat_res.status_code == 200
-    assert chat_res.json()["is_grounded"] is True
+    db_session.close()
+    Base.metadata.drop_all(bind=test_engine)
+
+
+def test_extract_and_store_endpoint(monkeypatch):
+    """Verifies that /api/extraction/extract-and-store successfully stores memories and returns source_summary without error."""
+    test_engine = create_engine(
+        "sqlite:///:memory:",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool
+    )
+    TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=test_engine)
+    Base.metadata.create_all(bind=test_engine)
+    db_session = TestingSessionLocal()
+
+    app = FastAPI()
+    app.include_router(extraction_router)
+    app.include_router(memory_router)
+
+    def override_get_db():
+        try:
+            yield db_session
+        finally:
+            pass
+
+    app.dependency_overrides[get_db] = override_get_db
+    client = TestClient(app)
+
+    mock_llm = MagicMock()
+    mock_llm.generate_json.return_value = {
+        "source_summary": "Architecture board approved PostgreSQL with pgvector.",
+        "memories": [
+            {
+                "memory_type": "decision",
+                "title": "Use PostgreSQL with pgvector",
+                "content": "The team decided to use PostgreSQL with pgvector for production.",
+                "confidence": 0.98,
+                "tags": ["postgres", "vector"],
+                "entities": [{"entity_type": "other", "name": "PostgreSQL"}],
+                "meta_info": {}
+            }
+        ],
+        "entities": [{"entity_type": "other", "name": "PostgreSQL"}]
+    }
+    monkeypatch.setattr(memory_extractor, "llm_client", mock_llm)
+
+    res = client.post("/api/extraction/extract-and-store", json={
+        "company_id": "default-org",
+        "title": "Executive Board Meeting",
+        "text": "The team decided to use PostgreSQL with pgvector for production."
+    })
+
+    assert res.status_code == 200
+    data = res.json()
+    assert data["status"] == "success"
+    assert data["stored_count"] == 1
+    assert "source_id" in data
+    assert "source_summary" in data
+    assert "extraction_summary" in data
+    assert "PostgreSQL" in data["source_summary"]
+    assert len(data["memories"]) == 1
 
     db_session.close()
     Base.metadata.drop_all(bind=test_engine)

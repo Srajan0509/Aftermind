@@ -142,6 +142,7 @@ class ExtractionResponse(BaseModel):
     memories: list[ExtractedMemory]
     entities: list[EntityMention]
     memories_count: int
+    source_summary: str | None = None
     module3_payloads: list[dict[str, Any]] = Field(default_factory=list)
     processing_status: str = "completed"
     generated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))

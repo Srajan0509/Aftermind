@@ -36,9 +36,10 @@ def extract_business_memories(request: ExtractionRequest):
         return memory_extractor.extract(request)
     except ExtractionError as exc:
         message = str(exc)
+        msg_lower = message.lower()
         code = (
             status.HTTP_503_SERVICE_UNAVAILABLE
-            if "not configured" in message.lower()
+            if "not configured" in msg_lower or "no llm api key" in msg_lower
             else status.HTTP_502_BAD_GATEWAY
         )
         raise HTTPException(status_code=code, detail=message) from exc
@@ -72,13 +73,17 @@ def extract_and_store_business_memories(
         raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc))
 
     # 2. Register Source in Module 3
+    summary_text = getattr(extraction_result, "source_summary", None)
+    if not summary_text:
+        summary_text = f"Extracted {len(extraction_result.memories)} business memories from source."
+
     try:
         source_create = SourceCreate(
             company_id=company_id,
             title=source_title,
             source_type=SourceType.DOCUMENT,
             raw_content=text,
-            meta_info={"summary": extraction_result.source_summary}
+            meta_info={"summary": summary_text}
         )
         source = memory_service.create_source(db, source_create)
     except Exception as exc:
@@ -129,7 +134,8 @@ def extract_and_store_business_memories(
         "stored_count": len(stored_ids),
         "source_id": source.id,
         "memory_ids": stored_ids,
-        "extraction_summary": extraction_result.source_summary or f"Extracted and indexed {len(stored_ids)} memories.",
+        "source_summary": summary_text,
+        "extraction_summary": summary_text or f"Extracted and indexed {len(stored_ids)} memories.",
         "memories": [m.model_dump() for m in extraction_result.memories],
         "entities": [e.model_dump() for e in extraction_result.entities]
     }

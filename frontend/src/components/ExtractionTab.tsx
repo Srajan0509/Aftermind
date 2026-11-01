@@ -71,7 +71,7 @@ export const ExtractionTab: React.FC<ExtractionTabProps> = ({
 
     try {
       const res = await api.extractAndStore(text, title, companyId);
-      setResult({ stored_count: res.stored_count, extraction_summary: res.extraction_summary });
+      setResult(res);
       setStoredSuccess(true);
       onRefreshMemories();
     } catch (err: any) {

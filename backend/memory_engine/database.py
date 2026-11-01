@@ -40,6 +40,20 @@ def init_db():
     Base.metadata.create_all(bind=engine)
     logger.info("Memory Engine tables initialized successfully.")
 
+    # Seed default tenant 'default-org'
+    try:
+        from .models import Company
+        with SessionLocal() as session:
+            default_company = session.query(Company).filter(
+                (Company.id == "default-org") | (Company.name == "default-org")
+            ).first()
+            if not default_company:
+                session.add(Company(id="default-org", name="default-org", domain="aftermind.internal"))
+                session.commit()
+                logger.info("Default company tenant 'default-org' initialized.")
+    except Exception as e:
+        logger.warning(f"Default company seeding check skipped: {e}")
+
 
 def get_db():
     """FastAPI dependency for yielding database session."""
