@@ -7,6 +7,7 @@ from memory_engine.database import init_db
 from memory_engine.routes import router as memory_router
 from memory_engine.config import memory_config
 from memory_extraction.routes import router as extraction_router
+from data_ingestion.routes import router as ingestion_router
 
 load_dotenv()
 
@@ -37,6 +38,8 @@ app.add_middleware(
 app.include_router(memory_router)
 # Mount Module 2 Intelligent Memory Extraction routes
 app.include_router(extraction_router)
+# Mount Module 1 Multi-Source AI Data Ingestion routes
+app.include_router(ingestion_router)
 
 @app.get("/")
 def read_root():
