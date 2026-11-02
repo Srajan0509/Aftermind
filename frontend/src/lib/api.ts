@@ -304,26 +304,66 @@ export const api = {
     const url = new URL(`${API_BASE_URL}/api/tracker/commitments`);
     url.searchParams.set("company_id", companyId);
     if (status && status !== "ALL") {
-      url.searchParams.set("status", status);
+      url.searchParams.set("status", status.toLowerCase());
     }
     const res = await fetch(url.toString(), { cache: "no-store" });
     if (!res.ok) throw new Error("Failed to fetch commitments");
-    return res.json();
+    const data = await res.json();
+    return (data || []).map((c: any) => {
+      const daysLeft = c.days_left ?? c.days_remaining;
+      const rawStatus = (c.tracker_status || c.memory_status || c.status || "PENDING").toUpperCase();
+      let urgency: CommitmentItem["urgency_level"] = "NORMAL";
+      if (daysLeft !== undefined && daysLeft < 0) urgency = "CRITICAL";
+      else if (daysLeft !== undefined && daysLeft <= 3) urgency = "HIGH";
+
+      return {
+        id: c.memory_id || c.id,
+        company_id: c.company_id,
+        title: c.title,
+        content: c.description || c.content,
+        assignee: c.owner || c.assignee || "Unassigned",
+        deadline: c.deadline ? String(c.deadline) : (c.deadline_text || undefined),
+        status: rawStatus === "DUE_SOON" ? "PENDING" : rawStatus,
+        urgency_level: urgency,
+        days_remaining: daysLeft,
+        confidence: c.confidence ?? 0.95,
+        created_at: c.created_at,
+        source_title: c.source_title
+      };
+    });
   },
 
   getTrackerAnalytics: async (companyId = "default-org") => {
-    const res = await fetch(`${API_BASE_URL}/api/tracker/analytics?company_id=${encodeURIComponent(companyId)}`, {
+    let res = await fetch(`${API_BASE_URL}/api/tracker/summary?company_id=${encodeURIComponent(companyId)}`, {
       cache: "no-store",
     });
+    if (!res.ok) {
+      res = await fetch(`${API_BASE_URL}/api/tracker/analytics?company_id=${encodeURIComponent(companyId)}`, {
+        cache: "no-store",
+      });
+    }
     if (!res.ok) throw new Error("Failed to fetch tracker analytics");
-    return res.json();
+    const data = await res.json();
+    const total = data.total ?? (data.total_open !== undefined ? data.total_open + (data.completed || 0) : 0);
+    const active = data.active ?? data.total_open ?? 0;
+    const completed = data.completed ?? 0;
+    const completion_rate = data.completion_rate ?? (total > 0 ? Math.round((completed / total) * 100) : 0);
+    return {
+      total,
+      active,
+      overdue: data.overdue ?? 0,
+      due_soon: data.due_soon ?? 0,
+      pending: data.pending ?? 0,
+      completed,
+      completion_rate
+    };
   },
 
   updateCommitmentStatus: async (memoryId: string, status: string, notes?: string) => {
     const res = await fetch(`${API_BASE_URL}/api/tracker/commitments/${memoryId}/status`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ status, notes }),
+      body: JSON.stringify({ company_id: "default-org", status, notes }),
     });
     if (!res.ok) throw new Error("Failed to update status");
     return res.json();

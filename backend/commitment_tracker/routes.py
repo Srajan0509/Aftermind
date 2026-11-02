@@ -1,5 +1,5 @@
 from datetime import date
-from typing import Annotated, List, Optional
+from typing import Annotated, Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi import status as http_status
@@ -36,15 +36,25 @@ AsOf = Annotated[
 ]
 
 
-@router.get("/summary", response_model=TrackerSummary)
+@router.get("/summary")
+@router.get("/analytics")
 def get_summary(
     company_id: CompanyId,
     project_id: ProjectId = None,
     as_of: AsOf = None,
     db: Session = Depends(get_db),
 ):
-    """Counts of open, overdue, due-soon and completed commitments."""
-    return tracker_service.summary(db, company_id, project_id, as_of)
+    """Counts of open, overdue, due-soon and completed commitments with frontend analytics aliases."""
+    summ = tracker_service.summary(db, company_id, project_id, as_of)
+    tot = summ.total_open + summ.completed
+    comp_rate = round((summ.completed / tot * 100)) if tot > 0 else 0
+    res_dict = summ.model_dump()
+    res_dict.update({
+        "total": tot,
+        "active": summ.total_open,
+        "completion_rate": comp_rate
+    })
+    return res_dict
 
 
 @router.get("/commitments", response_model=List[TrackedCommitment])
@@ -142,6 +152,30 @@ def complete_commitment(
     """Mark a commitment as completed."""
     try:
         return tracker_service.complete_commitment(db, req.company_id, memory_id, req.note, as_of)
+    except CommitmentNotFoundError as exc:
+        raise HTTPException(status_code=http_status.HTTP_404_NOT_FOUND, detail=str(exc))
+    except InvalidCommitmentStateError as exc:
+        raise HTTPException(status_code=http_status.HTTP_409_CONFLICT, detail=str(exc))
+
+
+@router.patch("/commitments/{memory_id}/status")
+def patch_commitment_status(
+    memory_id: str,
+    payload: Dict[str, Any],
+    as_of: AsOf = None,
+    db: Session = Depends(get_db),
+):
+    """Update commitment status from frontend (supports COMPLETED, ACTIVE, etc.)."""
+    company_id = payload.get("company_id") or "default-org"
+    note = payload.get("notes") or payload.get("note")
+    status_val = str(payload.get("status") or "").upper()
+    try:
+        if status_val == "COMPLETED":
+            return tracker_service.complete_commitment(db, company_id, memory_id, note, as_of)
+        from memory_engine.memory_service import memory_service
+        from memory_engine.schemas import MemoryUpdate, MemoryStatus
+        mod_status = MemoryStatus.COMPLETED if status_val == "COMPLETED" else MemoryStatus.ACTIVE
+        return memory_service.update_memory(db, memory_id, MemoryUpdate(status=mod_status))
     except CommitmentNotFoundError as exc:
         raise HTTPException(status_code=http_status.HTTP_404_NOT_FOUND, detail=str(exc))
     except InvalidCommitmentStateError as exc:

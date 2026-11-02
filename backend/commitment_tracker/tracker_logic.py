@@ -107,11 +107,12 @@ def filter_items(
     status: Optional[TrackerStatus] = None,
 ) -> List[TrackedCommitment]:
     result = list(items)
-    if owner:
+    if owner and isinstance(owner, str) and owner.strip():
         wanted = owner.strip().lower()
         result = [i for i in result if (i.owner or UNASSIGNED).lower() == wanted]
-    if status:
-        result = [i for i in result if i.tracker_status == status]
+    if status and isinstance(status, (TrackerStatus, str)):
+        stat_val = status.value if hasattr(status, "value") else str(status)
+        result = [i for i in result if i.tracker_status.value == stat_val]
     return result
 
 
