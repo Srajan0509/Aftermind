@@ -285,7 +285,9 @@ export const IngestionTab: React.FC<IngestionTabProps> = ({
           {/* Direct CTA to Next Module */}
           <div className="pt-3 border-t border-slate-800 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
             <p className="text-xs sm:text-sm text-slate-300">
-              Next step: extract business decisions, commitments, and deadlines from this content.
+              {result.extraction_result?.memories?.length
+                ? `✓ Auto-indexed ${result.extraction_result.memories.length} business memories into Search & AI Assistant (Mod 3) and Tracker (Mod 4). You can also review or refine them in Module 2.`
+                : "Next step: extract business decisions, commitments, and deadlines from this content."}
             </p>
             <button
               onClick={() => {
@@ -294,7 +296,7 @@ export const IngestionTab: React.FC<IngestionTabProps> = ({
               }}
               className="px-5 py-2.5 rounded-lg bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs sm:text-sm flex items-center gap-2 shadow-md shadow-blue-600/30"
             >
-              <span>Send to Module 2 (Extraction)</span>
+              <span>{result.extraction_result?.memories?.length ? "Review in Module 2" : "Send to Module 2 (Extraction)"}</span>
               <ArrowRight className="w-4 h-4" />
             </button>
           </div>

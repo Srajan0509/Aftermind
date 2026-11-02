@@ -58,8 +58,58 @@ class RAGEngine:
         if not req.include_superseded:
             search_results = [r for r in search_results if r.memory.status != "superseded"]
 
-        # Step 3: If no relevant memories, state clearly that information could not be found
+        # Step 3: Check sources table fallback if memories table is empty or had no matches
         if not search_results:
+            try:
+                from .models import Source
+                from .vector_search import normalize_query_text
+                sources_query = db.query(Source).filter(Source.company_id == company_id).order_by(Source.created_at.desc()).all()
+                if sources_query:
+                    import re
+                    norm_q = normalize_query_text(question_text)
+                    stop_words = {"give", "info", "related", "with", "from", "what", "show", "tell", "about", "have", "you", "does", "latest", "recent", "this", "that", "there", "the", "and"}
+                    query_tokens = [w for w in re.findall(r"\w+", norm_q) if len(w) > 2 and w not in stop_words]
+
+                    matched_source = None
+                    matching_lines = []
+                    for src in sources_query:
+                        c_low = (src.raw_content or "").lower()
+                        t_low = (src.title or "").lower()
+                        if any(tok in c_low or tok in t_low for tok in query_tokens) or ("decision" in norm_q and "decision" in c_low):
+                            matched_source = src
+                            lines = [l.strip() for l in (src.raw_content or "").split("\n") if l.strip()]
+                            for l in lines:
+                                l_low = l.lower()
+                                if any(tok in l_low for tok in query_tokens) or ("decision" in norm_q and any(k in l_low for k in ["decision", "decided", "approved"])):
+                                    matching_lines.append(l)
+                            if matching_lines:
+                                break
+
+                    if matched_source and matching_lines:
+                        snippet_text = "\n".join(f"- {ml}" for ml in matching_lines[:5])
+                        answer_text = (
+                            f"Based on your ingested document '{matched_source.title}':\n\n"
+                            f"{snippet_text}\n\n"
+                            f"*Note: You can click 'Send to Module 2 (Extraction)' to automatically save these as structured business decisions and commitments for tracking.*"
+                        )
+                        return RAGChatResponse(
+                            question=question_text,
+                            answer=answer_text,
+                            sources=[SourceReference(
+                                source_id=matched_source.id,
+                                source_title=matched_source.title,
+                                source_type=matched_source.source_type,
+                                memory_id=f"src-{matched_source.id}",
+                                memory_title=matched_source.title,
+                                memory_type="document",
+                                content_snippet=snippet_text[:200]
+                            )],
+                            retrieved_memories_count=len(matching_lines[:5]),
+                            is_grounded=True
+                        )
+            except Exception as src_err:
+                logger.warning(f"Fallback source query failed: {src_err}")
+
             return RAGChatResponse(
                 question=question_text,
                 answer="I could not find any recorded business memories or discussions regarding this query for your company.",

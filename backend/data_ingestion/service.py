@@ -21,7 +21,13 @@ from .schemas import (
 # Optional Integration with Module 3 (Persistence)
 try:
     from memory_engine.memory_service import memory_service
-    from memory_engine.schemas import SourceCreate, SourceType as Mod3SourceType
+    from memory_engine.schemas import (
+        SourceCreate,
+        SourceType as Mod3SourceType,
+        MemoryCreate,
+        MemoryType as Mod3MemoryType,
+        MemoryStatus,
+    )
     MODULE_3_AVAILABLE = True
 except ImportError:
     MODULE_3_AVAILABLE = False
@@ -119,11 +125,12 @@ class IngestionService:
         source_type: str,
         project_id: Optional[str],
         author_id: Optional[str],
-        metadata: Dict[str, Any]
+        metadata: Dict[str, Any],
+        db: Optional[Session] = None
     ) -> Optional[Dict[str, Any]]:
         """
         Dispatches standardized text to Module 2 using exact ExtractionRequest contract.
-        Optional: does not block ingestion if Module 2 is unavailable or unconfigured.
+        Also auto-persists extracted memories into Module 3 long-term storage when db is provided.
         """
         if not MODULE_2_AVAILABLE or memory_extractor is None or not company_id:
             logger.info("Module 2 extraction skipped: Module 2 not available or company_id missing.")
@@ -141,6 +148,44 @@ class IngestionService:
                 metadata=metadata
             )
             extraction_resp = memory_extractor.extract(req)
+
+            # Auto-persist extracted business memories into Module 3 long-term storage
+            if db is not None and not str(source_id).startswith("standalone-") and MODULE_3_AVAILABLE and memory_service is not None:
+                type_map = {
+                    "decision": Mod3MemoryType.DECISION,
+                    "client_requirement": Mod3MemoryType.CLIENT_REQUIREMENT,
+                    "employee_commitment": Mod3MemoryType.EMPLOYEE_COMMITMENT,
+                    "important_deadline": Mod3MemoryType.IMPORTANT_DEADLINE,
+                    "meeting_discussion": Mod3MemoryType.MEETING_DISCUSSION,
+                    "general_info": Mod3MemoryType.GENERAL_INFO,
+                }
+                for mem in extraction_resp.memories:
+                    m_type_val = mem.memory_type.value if hasattr(mem.memory_type, "value") else str(mem.memory_type)
+                    mod3_type = type_map.get(m_type_val.lower(), Mod3MemoryType.GENERAL_INFO)
+                    meta_mem = dict(mem.meta_info or {})
+                    if mem.person:
+                        meta_mem["person"] = mem.person
+                        meta_mem["assignee"] = mem.person
+                    if mem.deadline:
+                        meta_mem["deadline"] = mem.deadline
+                    try:
+                        mem_create = MemoryCreate(
+                            company_id=company_id,
+                            project_id=project_id,
+                            source_id=source_id,
+                            author_id=author_id,
+                            memory_type=mod3_type,
+                            title=mem.title,
+                            content=mem.content,
+                            confidence=mem.confidence if mem.confidence is not None else 0.95,
+                            status=MemoryStatus.ACTIVE,
+                            tags=list(mem.tags or []),
+                            meta_info=meta_mem
+                        )
+                        memory_service.create_memory(db, mem_create)
+                    except Exception as save_err:
+                        logger.warning(f"Failed to auto-persist memory during ingestion: {save_err}")
+
             return extraction_resp.model_dump(mode="json")
         except Exception as e:
             logger.warning(f"Module 2 extraction skipped: {e}")
@@ -182,7 +227,8 @@ class IngestionService:
                 source_type=req.source_type.value,
                 project_id=req.project_id,
                 author_id=req.author_id,
-                metadata=meta
+                metadata=meta,
+                db=db
             )
 
         return IngestionResponse(
@@ -251,7 +297,8 @@ class IngestionService:
                 source_type=source_type.value,
                 project_id=project_id,
                 author_id=author_id,
-                metadata=meta
+                metadata=meta,
+                db=db
             )
 
         return IngestionResponse(
@@ -327,7 +374,8 @@ class IngestionService:
                 source_type=source_type.value,
                 project_id=project_id,
                 author_id=author_id,
-                metadata=meta
+                metadata=meta,
+                db=db
             )
 
         return IngestionResponse(

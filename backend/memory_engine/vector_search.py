@@ -11,6 +11,33 @@ from .embedding_service import embedding_service
 logger = logging.getLogger("memory_engine.vector_search")
 
 
+import re
+
+def normalize_query_text(query: str) -> str:
+    """Normalize common business query typos and terminology."""
+    q = query.lower()
+    typos = {
+        r"\bdedsion\b": "decision",
+        r"\bdesicion\b": "decision",
+        r"\bdecison\b": "decision",
+        r"\bdecisons\b": "decisions",
+        r"\bdedsions\b": "decisions",
+        r"\bcomitment\b": "commitment",
+        r"\bcomittment\b": "commitment",
+        r"\bcommitmnt\b": "commitment",
+        r"\bcomitments\b": "commitments",
+        r"\bdeadine\b": "deadline",
+        r"\bdeadlnes\b": "deadlines",
+        r"\brequirment\b": "requirement",
+        r"\brequirments\b": "requirements",
+        r"\barchitecure\b": "architecture",
+        r"\bpostgres\b": "postgresql",
+    }
+    for pat, rep in typos.items():
+        q = re.sub(pat, rep, q)
+    return q
+
+
 class VectorSearchEngine:
     """
     Vector similarity search engine supporting PostgreSQL + pgvector and SQLite fallback.
@@ -31,8 +58,9 @@ class VectorSearchEngine:
         """
         Execute semantic vector similarity search scoped to a specific company.
         """
-        # Generate query vector
-        query_vector = embedding_service.generate_embedding(query)
+        norm_query = normalize_query_text(query)
+        # Generate query vector with normalized query
+        query_vector = embedding_service.generate_embedding(norm_query)
 
         if is_postgres:
             return self._search_postgres(
@@ -43,7 +71,8 @@ class VectorSearchEngine:
                 memory_type=memory_type,
                 status=status,
                 limit=limit,
-                min_similarity=min_similarity
+                min_similarity=min_similarity,
+                raw_query=norm_query
             )
         else:
             return self._search_in_memory(
@@ -54,7 +83,8 @@ class VectorSearchEngine:
                 memory_type=memory_type,
                 status=status,
                 limit=limit,
-                min_similarity=min_similarity
+                min_similarity=min_similarity,
+                raw_query=norm_query
             )
 
     def _search_postgres(
@@ -66,7 +96,8 @@ class VectorSearchEngine:
         memory_type: Optional[str],
         status: Optional[str],
         limit: int,
-        min_similarity: float
+        min_similarity: float,
+        raw_query: str = ""
     ) -> List[SearchResultItem]:
         """pgvector native cosine distance search."""
         try:
@@ -108,10 +139,41 @@ class VectorSearchEngine:
 
             results = db.execute(text(sql), params).fetchall()
 
-            search_items = []
+            norm_q = (raw_query or "").lower()
+            detected_type = memory_type
+            if not detected_type:
+                if "decision" in norm_q:
+                    detected_type = "decision"
+                elif "commitment" in norm_q or "assignee" in norm_q:
+                    detected_type = "employee_commitment"
+                elif "requirement" in norm_q:
+                    detected_type = "client_requirement"
+                elif "deadline" in norm_q:
+                    detected_type = "important_deadline"
+
+            stop_words = {"give", "info", "related", "with", "from", "what", "show", "tell", "about", "have", "you", "does", "latest", "recent", "this", "that", "there", "the", "and"}
+            query_tokens = [w for w in re.findall(r"\w+", norm_q) if len(w) > 2 and w not in stop_words]
+
+            scored_pg_items = []
             for row in results:
                 similarity = float(row.similarity) if row.similarity is not None else 0.0
-                if similarity < min_similarity:
+
+                type_bonus = 0.0
+                if detected_type and (row.memory_type == detected_type or detected_type in (row.title or "").lower()):
+                    type_bonus = 0.35
+
+                keyword_bonus = 0.0
+                row_text = f"{row.title or ''} {row.content or ''}".lower()
+                for tok in query_tokens:
+                    if tok in (row.title or "").lower():
+                        keyword_bonus += 0.20
+                    elif tok in row_text:
+                        keyword_bonus += 0.10
+                keyword_bonus = min(0.40, keyword_bonus)
+
+                combined_score = similarity + type_bonus + keyword_bonus
+
+                if combined_score < min_similarity and not (type_bonus > 0 and combined_score >= 0.05) and not (keyword_bonus >= 0.20 and combined_score >= 0.05):
                     continue
 
                 mem_resp = MemoryResponse(
@@ -136,18 +198,25 @@ class VectorSearchEngine:
                     project_name=row.project_name,
                     company_name=row.company_name
                 )
-                search_items.append(
+                scored_pg_items.append((
+                    combined_score,
                     SearchResultItem(
                         memory=mem_resp,
-                        similarity_score=round(similarity, 4),
+                        similarity_score=round(combined_score, 4),
                         source_reference={
                             "source_id": row.source_id,
                             "source_title": row.source_title,
                             "source_type": row.source_type
                         }
                     )
-                )
-            return search_items
+                ))
+
+            if "latest" in norm_q or "recent" in norm_q:
+                scored_pg_items.sort(key=lambda x: (x[0], str(x[1].memory.created_at or "")), reverse=True)
+            else:
+                scored_pg_items.sort(key=lambda x: x[0], reverse=True)
+
+            return [item[1] for item in scored_pg_items[:limit]]
         except Exception as e:
             logger.warning(f"PostgreSQL pgvector search failed ({e}), rolling back and falling back to memory search.")
             try:
@@ -174,7 +243,8 @@ class VectorSearchEngine:
         memory_type: Optional[str],
         status: Optional[str],
         limit: int,
-        min_similarity: float
+        min_similarity: float,
+        raw_query: str = ""
     ) -> List[SearchResultItem]:
         """In-memory cosine similarity search for SQLite or test environments."""
         try:
@@ -219,7 +289,37 @@ class VectorSearchEngine:
 
                 similarity = float(np.dot(q_vec, mem_vec) / (q_norm * m_norm))
 
-                if similarity >= min_similarity:
+                # Hybrid type and keyword matching
+                norm_q = (raw_query or "").lower()
+                detected_type = memory_type
+                if not detected_type:
+                    if "decision" in norm_q:
+                        detected_type = "decision"
+                    elif "commitment" in norm_q or "assignee" in norm_q:
+                        detected_type = "employee_commitment"
+                    elif "requirement" in norm_q:
+                        detected_type = "client_requirement"
+                    elif "deadline" in norm_q:
+                        detected_type = "important_deadline"
+
+                type_bonus = 0.0
+                if detected_type and (mem.memory_type == detected_type or detected_type in (mem.title or "").lower()):
+                    type_bonus = 0.35
+
+                keyword_bonus = 0.0
+                stop_words = {"give", "info", "related", "with", "from", "what", "show", "tell", "about", "have", "you", "does", "latest", "recent", "this", "that", "there", "the", "and"}
+                query_tokens = [w for w in re.findall(r"\w+", norm_q) if len(w) > 2 and w not in stop_words]
+                mem_text = f"{mem.title or ''} {mem.content or ''}".lower()
+                for tok in query_tokens:
+                    if tok in (mem.title or "").lower():
+                        keyword_bonus += 0.20
+                    elif tok in mem_text:
+                        keyword_bonus += 0.10
+                keyword_bonus = min(0.40, keyword_bonus)
+
+                combined_score = similarity + type_bonus + keyword_bonus
+
+                if combined_score >= min_similarity or (type_bonus > 0 and combined_score >= 0.05) or (keyword_bonus >= 0.20 and combined_score >= 0.05):
                     source_title = mem.source.title if mem.source else None
                     source_type = mem.source.source_type if mem.source else None
                     project_name = mem.project.name if mem.project else None
@@ -248,14 +348,17 @@ class VectorSearchEngine:
                         company_name=company_name
                     )
 
-                    scored_items.append((similarity, mem_resp, {
+                    scored_items.append((combined_score, mem_resp, {
                         "source_id": mem.source_id,
                         "source_title": source_title,
                         "source_type": source_type
                     }))
 
-            # Sort descending by similarity
-            scored_items.sort(key=lambda x: x[0], reverse=True)
+            # Sort descending by combined_score, with recency boost if latest requested
+            if "latest" in (raw_query or "").lower() or "recent" in (raw_query or "").lower():
+                scored_items.sort(key=lambda x: (x[0], str(x[1].created_at or "")), reverse=True)
+            else:
+                scored_items.sort(key=lambda x: x[0], reverse=True)
             top_candidates = scored_items[:limit]
 
             return [

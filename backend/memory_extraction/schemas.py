@@ -171,32 +171,43 @@ class ExtractedMemory(BaseModel):
             data["title"] = t[:255]
             data["content"] = c
 
-            # Normalize confidence (scale 0-100 down to 0-1 if needed)
+            # Normalize confidence (scale 0-100 down to 0-1 only if returned as percentage >= 5.0)
             conf = data.get("confidence")
             if conf is None:
                 data["confidence"] = 0.95
             elif isinstance(conf, (int, float)):
-                if 1.0 < conf <= 100.0:
-                    conf = conf / 100.0
-                data["confidence"] = max(0.0, min(1.0, float(conf)))
-            else:
-                data["confidence"] = 0.95
+                if 5.0 <= conf <= 100.0:
+                    data["confidence"] = conf / 100.0
+                else:
+                    data["confidence"] = float(conf)
 
             # Normalize memory_type
-            m_type = str(data.get("memory_type") or "").strip().lower()
+            raw_type = data.get("memory_type")
+            if hasattr(raw_type, "value"):
+                m_type = str(raw_type.value).strip().lower()
+            else:
+                m_type = str(raw_type or "").strip().lower()
+            if "." in m_type:
+                m_type = m_type.split(".")[-1]
+
+            valid_types = {e.value for e in MemoryType}
             aliases = {
                 "commitment": MemoryType.EMPLOYEE_COMMITMENT.value,
                 "commitments": MemoryType.EMPLOYEE_COMMITMENT.value,
+                "employee_commitment": MemoryType.EMPLOYEE_COMMITMENT.value,
                 "employee_commitments": MemoryType.EMPLOYEE_COMMITMENT.value,
                 "action_item": MemoryType.EMPLOYEE_COMMITMENT.value,
                 "requirement": MemoryType.CLIENT_REQUIREMENT.value,
                 "requirements": MemoryType.CLIENT_REQUIREMENT.value,
+                "client_requirement": MemoryType.CLIENT_REQUIREMENT.value,
                 "client_requirements": MemoryType.CLIENT_REQUIREMENT.value,
                 "deadline": MemoryType.IMPORTANT_DEADLINE.value,
                 "deadlines": MemoryType.IMPORTANT_DEADLINE.value,
+                "important_deadline": MemoryType.IMPORTANT_DEADLINE.value,
                 "milestone": MemoryType.IMPORTANT_DEADLINE.value,
                 "discussion": MemoryType.MEETING_DISCUSSION.value,
                 "discussions": MemoryType.MEETING_DISCUSSION.value,
+                "meeting_discussion": MemoryType.MEETING_DISCUSSION.value,
                 "meeting": MemoryType.MEETING_DISCUSSION.value,
                 "decision": MemoryType.DECISION.value,
                 "decisions": MemoryType.DECISION.value,
@@ -204,7 +215,14 @@ class ExtractedMemory(BaseModel):
                 "info": MemoryType.GENERAL_INFO.value,
                 "general_info": MemoryType.GENERAL_INFO.value,
             }
-            data["memory_type"] = aliases.get(m_type, MemoryType.GENERAL_INFO.value)
+            if m_type in valid_types:
+                data["memory_type"] = m_type
+            elif m_type in aliases:
+                data["memory_type"] = aliases[m_type]
+            elif not m_type:
+                data["memory_type"] = MemoryType.GENERAL_INFO.value
+            else:
+                data["memory_type"] = m_type
 
             # Filter entities inside memory if any are blank strings
             raw_ents = data.get("entities")

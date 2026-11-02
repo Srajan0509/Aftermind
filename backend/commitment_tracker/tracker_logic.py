@@ -28,8 +28,8 @@ OPEN_STATUSES = (TrackerStatus.OVERDUE, TrackerStatus.DUE_SOON, TrackerStatus.PE
 # Single-item helpers
 # -------------------------------------------------------------
 def resolve_owner(memory: MemoryResponse, people: Dict[str, str]) -> Optional[str]:
-    """Owner = Module 2 `person`; otherwise the memory author's name."""
-    person = memory.meta_info.get("person")
+    """Owner = Module 2 `person` or `assignee`; otherwise the memory author's name."""
+    person = memory.meta_info.get("person") or memory.meta_info.get("assignee")
     if isinstance(person, str) and person.strip():
         return person.strip()
     if memory.author_id and people.get(memory.author_id):
