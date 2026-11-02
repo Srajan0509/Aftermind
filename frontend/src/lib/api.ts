@@ -82,20 +82,41 @@ export const api = {
   ingestDocument: async (file: File, companyId = "default-org") => {
     const formData = new FormData();
     formData.append("file", file);
+    formData.append("company_id", companyId);
     const res = await fetch(`${API_BASE_URL}/api/ingest/document?company_id=${encodeURIComponent(companyId)}`, {
       method: "POST",
       body: formData,
     });
     if (!res.ok) {
       const err = await res.json().catch(() => ({ detail: "Document ingestion failed" }));
-      throw new Error(err.detail || "Document ingestion failed");
+      let msg = "Document ingestion failed";
+      if (err?.detail) {
+        msg = Array.isArray(err.detail)
+          ? err.detail.map((d: any) => d.msg || (d.loc ? d.loc.join(".") : "") || JSON.stringify(d)).join(", ")
+          : typeof err.detail === "object"
+          ? JSON.stringify(err.detail)
+          : String(err.detail);
+      }
+      throw new Error(msg);
     }
-    return res.json();
+    const data = await res.json();
+    const text = data.extracted_text || data.transcription || data.transcript || data.preview || "";
+    return {
+      ...data,
+      extracted_text: text,
+      transcription: text,
+      transcript: text,
+      preview: text,
+      char_count: data.character_count ?? data.char_count ?? text.length,
+      character_count: data.character_count ?? data.char_count ?? text.length,
+    };
   },
 
   ingestAudio: async (file: File, companyId = "default-org", transcriber = "auto") => {
     const formData = new FormData();
     formData.append("file", file);
+    formData.append("company_id", companyId);
+    formData.append("transcriber", transcriber);
     const res = await fetch(
       `${API_BASE_URL}/api/ingest/audio?company_id=${encodeURIComponent(companyId)}&transcriber=${encodeURIComponent(transcriber)}`,
       {
@@ -105,9 +126,27 @@ export const api = {
     );
     if (!res.ok) {
       const err = await res.json().catch(() => ({ detail: "Audio transcription failed" }));
-      throw new Error(err.detail || "Audio transcription failed");
+      let msg = "Audio transcription failed";
+      if (err?.detail) {
+        msg = Array.isArray(err.detail)
+          ? err.detail.map((d: any) => d.msg || (d.loc ? d.loc.join(".") : "") || JSON.stringify(d)).join(", ")
+          : typeof err.detail === "object"
+          ? JSON.stringify(err.detail)
+          : String(err.detail);
+      }
+      throw new Error(msg);
     }
-    return res.json();
+    const data = await res.json();
+    const text = data.extracted_text || data.transcription || data.transcript || data.preview || "";
+    return {
+      ...data,
+      extracted_text: text,
+      transcription: text,
+      transcript: text,
+      preview: text,
+      char_count: data.character_count ?? data.char_count ?? text.length,
+      character_count: data.character_count ?? data.char_count ?? text.length,
+    };
   },
 
   getSupportedFormats: async () => {
