@@ -9,13 +9,30 @@ db_url = memory_config.DATABASE_URL
 
 # Adjust sqlite URL or postgres prefix if needed
 connect_args = {}
+engine_kwargs = {
+    "pool_pre_ping": True,   # Liveness check on checkout prevents "SSL connection closed unexpectedly"
+    "pool_recycle": 300,     # Recycle idle pool connections every 5 minutes
+}
+
 if db_url.startswith("sqlite"):
-    connect_args = {"check_same_thread": False}
+    connect_args["check_same_thread"] = False
 elif db_url.startswith("postgres://"):
-    # SQLAlchemy requires postgresql:// instead of postgres://
     db_url = db_url.replace("postgres://", "postgresql://", 1)
 
-engine = create_engine(db_url, connect_args=connect_args)
+if "postgresql" in db_url:
+    # Set TCP keepalives to prevent cloud middleboxes / firewalls from dropping idle SSL connections
+    connect_args.update({
+        "keepalives": 1,
+        "keepalives_idle": 30,
+        "keepalives_interval": 10,
+        "keepalives_count": 5
+    })
+    engine_kwargs.update({
+        "pool_size": 10,
+        "max_overflow": 20,
+    })
+
+engine = create_engine(db_url, connect_args=connect_args, **engine_kwargs)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
 
@@ -60,5 +77,11 @@ def get_db():
     db = SessionLocal()
     try:
         yield db
+    except Exception:
+        try:
+            db.rollback()
+        except Exception:
+            pass
+        raise
     finally:
         db.close()

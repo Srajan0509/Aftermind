@@ -78,22 +78,33 @@ class IngestionService:
         Falls back to generating an independent local UUID if Module 3 is not used.
         """
         if db is not None and company_id and MODULE_3_AVAILABLE and memory_service is not None:
+            mod3_st = self._map_source_type_to_mod3(source_type)
+            source_req = SourceCreate(
+                company_id=company_id,
+                project_id=project_id,
+                author_id=author_id,
+                title=title,
+                source_type=mod3_st,
+                raw_content=raw_content,
+                meta_info=metadata
+            )
             try:
-                mod3_st = self._map_source_type_to_mod3(source_type)
-                source_req = SourceCreate(
-                    company_id=company_id,
-                    project_id=project_id,
-                    author_id=author_id,
-                    title=title,
-                    source_type=mod3_st,
-                    raw_content=raw_content,
-                    meta_info=metadata
-                )
                 source = memory_service.create_source(db, source_req)
                 return source.id, True
-            except Exception as e:
-                logger.warning(f"Module 3 source persistence skipped or failed: {e}")
+            except ValueError:
                 raise
+            except Exception as e:
+                logger.warning(f"Initial Module 3 source persistence failed ({e}); attempting session rollback and retry.")
+                try:
+                    db.rollback()
+                    source = memory_service.create_source(db, source_req)
+                    return source.id, True
+                except ValueError:
+                    raise
+                except Exception as retry_err:
+                    logger.warning(f"Module 3 source persistence retry failed ({retry_err}); falling back to standalone ID.")
+                    standalone_id = f"standalone-{uuid.uuid4()}"
+                    return standalone_id, False
 
         # Standalone operation (no DB required)
         standalone_id = f"standalone-{uuid.uuid4()}"
