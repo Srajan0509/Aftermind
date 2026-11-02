@@ -80,10 +80,10 @@ class VectorSearchEngine:
                        m.created_at, m.updated_at,
                        s.title AS source_title, s.source_type,
                        p.name AS project_name, c.name AS company_name,
-                       1 - (m.embedding <=> :query_vector::vector) AS similarity
+                       1 - (m.embedding <=> CAST(:query_vector AS vector)) AS similarity
                 FROM memories m
-                JOIN sources s ON m.source_id = s.id
-                JOIN companies c ON m.company_id = c.id
+                LEFT JOIN sources s ON m.source_id = s.id
+                LEFT JOIN companies c ON m.company_id = c.id
                 LEFT JOIN projects p ON m.project_id = p.id
                 WHERE m.company_id = :company_id
                   AND m.embedding IS NOT NULL
@@ -149,7 +149,11 @@ class VectorSearchEngine:
                 )
             return search_items
         except Exception as e:
-            logger.warning(f"PostgreSQL pgvector search failed ({e}), falling back to memory search.")
+            logger.warning(f"PostgreSQL pgvector search failed ({e}), rolling back and falling back to memory search.")
+            try:
+                db.rollback()
+            except Exception:
+                pass
             return self._search_in_memory(
                 db=db,
                 query_vector=query_vector,
@@ -173,83 +177,102 @@ class VectorSearchEngine:
         min_similarity: float
     ) -> List[SearchResultItem]:
         """In-memory cosine similarity search for SQLite or test environments."""
-        query = db.query(Memory).filter(Memory.company_id == company_id)
+        try:
+            query = db.query(Memory).filter(Memory.company_id == company_id)
 
-        if project_id:
-            query = query.filter(Memory.project_id == project_id)
-        if memory_type:
-            query = query.filter(Memory.memory_type == memory_type)
-        if status:
-            query = query.filter(Memory.status == status)
+            if project_id:
+                query = query.filter(Memory.project_id == project_id)
+            if memory_type:
+                query = query.filter(Memory.memory_type == memory_type)
+            if status:
+                query = query.filter(Memory.status == status)
 
-        candidates = query.all()
-        if not candidates:
-            return []
+            candidates = query.all()
+            if not candidates:
+                return []
 
-        q_vec = np.array(query_vector, dtype=np.float32)
-        q_norm = np.linalg.norm(q_vec)
-        if q_norm == 0:
-            return []
+            q_vec = np.array(query_vector, dtype=np.float32)
+            q_norm = np.linalg.norm(q_vec)
+            if q_norm == 0:
+                return []
 
-        scored_items = []
-        for mem in candidates:
-            if not mem.embedding:
-                continue
+            import json
+            scored_items = []
+            for mem in candidates:
+                if not mem.embedding:
+                    continue
 
-            mem_vec = np.array(mem.embedding, dtype=np.float32)
-            m_norm = np.linalg.norm(mem_vec)
-            if m_norm == 0:
-                continue
+                raw_emb = mem.embedding
+                if isinstance(raw_emb, str):
+                    try:
+                        raw_emb = json.loads(raw_emb)
+                    except Exception:
+                        continue
 
-            similarity = float(np.dot(q_vec, mem_vec) / (q_norm * m_norm))
+                try:
+                    mem_vec = np.array(raw_emb, dtype=np.float32)
+                except Exception:
+                    continue
+                m_norm = np.linalg.norm(mem_vec)
+                if m_norm == 0:
+                    continue
 
-            if similarity >= min_similarity:
-                source_title = mem.source.title if mem.source else None
-                source_type = mem.source.source_type if mem.source else None
-                project_name = mem.project.name if mem.project else None
-                company_name = mem.company.name if mem.company else None
+                similarity = float(np.dot(q_vec, mem_vec) / (q_norm * m_norm))
 
-                mem_resp = MemoryResponse(
-                    id=mem.id,
-                    company_id=mem.company_id,
-                    project_id=mem.project_id,
-                    source_id=mem.source_id,
-                    author_id=mem.author_id,
-                    memory_type=mem.memory_type,
-                    title=mem.title,
-                    content=mem.content,
-                    status=mem.status,
-                    confidence=mem.confidence,
-                    previous_memory_id=mem.previous_memory_id,
-                    change_reason=mem.change_reason,
-                    tags=mem.tags or [],
-                    meta_info=mem.meta_info or {},
-                    created_at=mem.created_at,
-                    updated_at=mem.updated_at,
-                    source_title=source_title,
-                    source_type=source_type,
-                    project_name=project_name,
-                    company_name=company_name
+                if similarity >= min_similarity:
+                    source_title = mem.source.title if mem.source else None
+                    source_type = mem.source.source_type if mem.source else None
+                    project_name = mem.project.name if mem.project else None
+                    company_name = mem.company.name if mem.company else None
+
+                    mem_resp = MemoryResponse(
+                        id=mem.id,
+                        company_id=mem.company_id,
+                        project_id=mem.project_id,
+                        source_id=mem.source_id,
+                        author_id=mem.author_id,
+                        memory_type=mem.memory_type,
+                        title=mem.title,
+                        content=mem.content,
+                        status=mem.status,
+                        confidence=mem.confidence,
+                        previous_memory_id=mem.previous_memory_id,
+                        change_reason=mem.change_reason,
+                        tags=mem.tags or [],
+                        meta_info=mem.meta_info or {},
+                        created_at=mem.created_at,
+                        updated_at=mem.updated_at,
+                        source_title=source_title,
+                        source_type=source_type,
+                        project_name=project_name,
+                        company_name=company_name
+                    )
+
+                    scored_items.append((similarity, mem_resp, {
+                        "source_id": mem.source_id,
+                        "source_title": source_title,
+                        "source_type": source_type
+                    }))
+
+            # Sort descending by similarity
+            scored_items.sort(key=lambda x: x[0], reverse=True)
+            top_candidates = scored_items[:limit]
+
+            return [
+                SearchResultItem(
+                    memory=item[1],
+                    similarity_score=round(item[0], 4),
+                    source_reference=item[2]
                 )
-
-                scored_items.append((similarity, mem_resp, {
-                    "source_id": mem.source_id,
-                    "source_title": source_title,
-                    "source_type": source_type
-                }))
-
-        # Sort descending by similarity
-        scored_items.sort(key=lambda x: x[0], reverse=True)
-        top_candidates = scored_items[:limit]
-
-        return [
-            SearchResultItem(
-                memory=item[1],
-                similarity_score=round(item[0], 4),
-                source_reference=item[2]
-            )
-            for item in top_candidates
-        ]
+                for item in top_candidates
+            ]
+        except Exception as e:
+            logger.warning(f"In-memory search encountered error ({e}); returning empty list.")
+            try:
+                db.rollback()
+            except Exception:
+                pass
+            return []
 
 
 vector_search_engine = VectorSearchEngine()

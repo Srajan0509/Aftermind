@@ -65,12 +65,17 @@ export const SearchAndChatTab: React.FC<SearchAndChatTabProps> = ({ companyId, o
       ]);
     } catch (err: any) {
       // Safely extract a readable message from any thrown value
-      const errMsg =
+      let errMsg =
         err instanceof Error
           ? err.message
           : typeof err === "string"
           ? err
           : err?.message || err?.detail || JSON.stringify(err) || "Failed to reach AI Assistant.";
+
+      if (errMsg.toLowerCase().includes("failed to fetch")) {
+        errMsg = "Could not connect to the backend server. If the service was sleeping (e.g. Render free tier), it takes 30-50 seconds to wake up. Please wait a moment and try again.";
+      }
+
       setChatMessages((prev) => [
         ...prev,
         {

@@ -217,15 +217,34 @@ export const api = {
   },
 
   chatWithMemory: async (query: string, companyId = "default-org", history: Array<{ role: string; content: string }> = []) => {
-    const res = await fetch(`${API_BASE_URL}/api/chat`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        question: query,          // backend RAGChatRequest expects 'question'
-        company_id: companyId,
-        conversation_history: history,
-      }),
+    const payload = JSON.stringify({
+      question: query,
+      query: query,
+      company_id: companyId,
+      conversation_history: history,
     });
+
+    const doFetch = async () => {
+      return fetch(`${API_BASE_URL}/api/chat`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: payload,
+      });
+    };
+
+    let res: Response;
+    try {
+      res = await doFetch();
+    } catch (netErr: any) {
+      // Retry once after 2 seconds in case backend is spinning up
+      await new Promise((resolve) => setTimeout(resolve, 2000));
+      try {
+        res = await doFetch();
+      } catch {
+        throw new Error("Could not connect to backend server. If using Render free tier, the backend may take 30-50s to wake up from sleep. Please try again.");
+      }
+    }
+
     if (!res.ok) {
       const err = await res.json().catch(() => ({ detail: "Assistant chat failed" }));
       let msg = "Assistant chat failed";

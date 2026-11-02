@@ -1,7 +1,7 @@
 from typing import List, Optional, Dict, Any
 from datetime import datetime
 from enum import Enum
-from pydantic import BaseModel, Field, ConfigDict
+from pydantic import BaseModel, Field, ConfigDict, model_validator
 
 
 class SourceType(str, Enum):
@@ -132,7 +132,7 @@ class SourceResponse(BaseModel):
 class MemoryCreate(BaseModel):
     company_id: str = Field(..., description="Company ID for multi-tenant isolation")
     project_id: Optional[str] = Field(None, description="Optional Project ID")
-    source_id: str = Field(..., description="Source reference ID")
+    source_id: Optional[str] = Field(None, description="Source reference ID")
     author_id: Optional[str] = Field(None, description="Person who made the decision or commitment")
     memory_type: MemoryType = Field(..., description="Classification of the memory item")
     title: str = Field(..., min_length=2, max_length=255)
@@ -158,7 +158,7 @@ class MemoryResponse(BaseModel):
     id: str
     company_id: str
     project_id: Optional[str]
-    source_id: str
+    source_id: Optional[str] = None
     author_id: Optional[str]
     memory_type: str
     title: str
@@ -183,8 +183,8 @@ class MemoryResponse(BaseModel):
 # Semantic Search Schemas
 # -------------------------------------------------------------
 class SemanticSearchRequest(BaseModel):
-    query: str = Field(..., min_length=2, description="Natural language search query")
-    company_id: str = Field(..., description="Mandatory company ID to enforce data isolation")
+    query: str = Field(..., min_length=1, description="Natural language search query")
+    company_id: str = Field(default="default-org", description="Mandatory company ID to enforce data isolation")
     project_id: Optional[str] = Field(None, description="Filter by specific project")
     memory_type: Optional[MemoryType] = Field(None, description="Filter by memory classification")
     status: Optional[MemoryStatus] = Field(None, description="Filter by status (default considers all or active)")
@@ -209,22 +209,39 @@ class SemanticSearchResponse(BaseModel):
 # RAG Chat Schemas
 # -------------------------------------------------------------
 class RAGChatRequest(BaseModel):
-    question: str = Field(..., min_length=2, description="User question about business memory")
-    company_id: str = Field(..., description="Company ID for strict multi-tenant authorization")
+    question: Optional[str] = Field(None, description="User question about business memory")
+    query: Optional[str] = Field(None, description="Alias for question")
+    company_id: str = Field(default="default-org", description="Company ID for strict multi-tenant authorization")
     project_id: Optional[str] = Field(None, description="Optional project scope")
     include_superseded: bool = Field(default=False, description="Whether to include past superseded decisions")
     limit: int = Field(default=5, ge=1, le=20)
+    conversation_history: Optional[List[Any]] = None
+
+    model_config = ConfigDict(extra="ignore")
+
+    @model_validator(mode="before")
+    @classmethod
+    def normalize_rag_request(cls, data: Any) -> Any:
+        if isinstance(data, dict):
+            q = data.get("question") or data.get("query") or ""
+            data["question"] = q
+            data["query"] = q
+            if not data.get("company_id"):
+                data["company_id"] = "default-org"
+        return data
 
 
 class SourceReference(BaseModel):
-    source_id: str
-    source_title: str
-    source_type: str
-    memory_id: str
-    memory_title: str
-    memory_type: str
-    content_snippet: str
-    timestamp: datetime
+    source_id: Optional[str] = None
+    source_title: Optional[str] = "Unspecified Source"
+    source_type: Optional[str] = "document"
+    memory_id: Optional[str] = None
+    memory_title: Optional[str] = None
+    memory_type: Optional[str] = None
+    content_snippet: Optional[str] = ""
+    timestamp: Optional[datetime] = None
+
+    model_config = ConfigDict(extra="ignore")
 
 
 class RAGChatResponse(BaseModel):
