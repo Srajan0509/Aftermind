@@ -1,3 +1,4 @@
+import uuid
 import logging
 from typing import List, Optional, Dict, Any
 from sqlalchemy.orm import Session
@@ -13,6 +14,7 @@ from .schemas import (
     PersonCreate,
     PersonResponse,
     SourceCreate,
+    SourceType,
     SourceResponse,
     MemoryHistoryResponse
 )
@@ -126,13 +128,16 @@ class MemoryService:
             db.refresh(company)
 
         # Validate source reference
-        source = db.query(Source).filter(
-            Source.id == req.source_id,
-            (Source.company_id == req.company_id) | (Source.company_id == company.id)
-        ).first()
+        source = None
+        if req.source_id:
+            source = db.query(Source).filter(
+                Source.id == req.source_id,
+                (Source.company_id == req.company_id) | (Source.company_id == company.id)
+            ).first()
         if not source:
+            source_id = req.source_id or str(uuid.uuid4())
             source = Source(
-                id=req.source_id,
+                id=source_id,
                 company_id=company.id,
                 title=req.title,
                 source_type=SourceType.DOCUMENT.value,
@@ -155,7 +160,7 @@ class MemoryService:
         memory = Memory(
             company_id=req.company_id,
             project_id=project_id,
-            source_id=req.source_id,
+            source_id=source.id,
             author_id=req.author_id,
             memory_type=req.memory_type.value,
             title=req.title,

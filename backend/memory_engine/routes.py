@@ -167,22 +167,31 @@ def semantic_search(req: SemanticSearchRequest, db: Session = Depends(get_db)):
     Natural language semantic search over business memories using vector similarity and metadata filtering.
     Mandatory company_id guarantees data isolation.
     """
-    results = vector_search_engine.search(
-        db=db,
-        query=req.query,
-        company_id=req.company_id,
-        project_id=req.project_id,
-        memory_type=req.memory_type.value if req.memory_type else None,
-        status=req.status.value if req.status else None,
-        limit=req.limit,
-        min_similarity=req.min_similarity
-    )
-    return SemanticSearchResponse(
-        query=req.query,
-        company_id=req.company_id,
-        results_count=len(results),
-        results=results
-    )
+    try:
+        results = vector_search_engine.search(
+            db=db,
+            query=req.query,
+            company_id=req.company_id or "default-org",
+            project_id=req.project_id,
+            memory_type=req.memory_type.value if req.memory_type else None,
+            status=req.status.value if req.status else None,
+            limit=req.limit,
+            min_similarity=req.min_similarity
+        )
+        return SemanticSearchResponse(
+            query=req.query,
+            company_id=req.company_id or "default-org",
+            results_count=len(results),
+            results=results
+        )
+    except Exception as e:
+        logger.exception("Error during semantic search: %s", e)
+        return SemanticSearchResponse(
+            query=req.query,
+            company_id=req.company_id or "default-org",
+            results_count=0,
+            results=[]
+        )
 
 
 @router.post("/chat/", response_model=RAGChatResponse)
@@ -192,7 +201,18 @@ def rag_chat(req: RAGChatRequest, db: Session = Depends(get_db)):
     RAG Pipeline: Answers employee questions using retrieved business memories.
     Always includes cited source references.
     """
-    return rag_engine.answer_question(db=db, req=req)
+    try:
+        return rag_engine.answer_question(db=db, req=req)
+    except Exception as e:
+        logger.exception("Error during RAG chat: %s", e)
+        q = req.question or req.query or ""
+        return RAGChatResponse(
+            question=q,
+            answer=f"I encountered a temporary error while searching business memories: {str(e)}. Please check your query or try again.",
+            sources=[],
+            retrieved_memories_count=0,
+            is_grounded=False
+        )
 
 
 # -------------------------------------------------------------

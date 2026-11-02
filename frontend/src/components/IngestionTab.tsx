@@ -31,12 +31,20 @@ export const IngestionTab: React.FC<IngestionTabProps> = ({
   const [loading, setLoading] = useState<boolean>(false);
   const [result, setResult] = useState<any | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [localTextFallback, setLocalTextFallback] = useState<string>("");
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
-      setFile(e.target.files[0]);
+      const selected = e.target.files[0];
+      setFile(selected);
       setError(null);
       setResult(null);
+      setLocalTextFallback("");
+      if (selected.name.toLowerCase().endsWith(".txt")) {
+        selected.text().then((txt) => {
+          setLocalTextFallback(txt);
+        }).catch(() => {});
+      }
     }
   };
 
@@ -54,6 +62,12 @@ export const IngestionTab: React.FC<IngestionTabProps> = ({
     try {
       if (ingestionMode === "document") {
         const res = await api.ingestDocument(file, companyId);
+        if (!res.extracted_text && localTextFallback) {
+          res.extracted_text = localTextFallback;
+          res.transcription = localTextFallback;
+          res.transcript = localTextFallback;
+          res.preview = localTextFallback;
+        }
         setResult(res);
       } else {
         const res = await api.ingestAudio(file, companyId, transcriber);
@@ -251,7 +265,7 @@ export const IngestionTab: React.FC<IngestionTabProps> = ({
             </div>
             <div className="p-3 rounded-lg bg-slate-950 border border-slate-800">
               <span className="text-slate-400 block text-xs">Char Count</span>
-              <span className="font-bold text-white">{result.char_count ?? 0}</span>
+              <span className="font-bold text-white">{result.character_count ?? result.char_count ?? (result.extracted_text?.length || localTextFallback?.length || 0)}</span>
             </div>
             <div className="p-3 rounded-lg bg-slate-950 border border-slate-800">
               <span className="text-slate-400 block text-xs">Source Type</span>
@@ -264,7 +278,7 @@ export const IngestionTab: React.FC<IngestionTabProps> = ({
               Extracted Content Preview:
             </label>
             <div className="p-4 rounded-lg bg-slate-950 border border-slate-800 text-xs sm:text-sm text-slate-200 max-h-56 overflow-y-auto font-mono whitespace-pre-wrap leading-relaxed">
-              {result.extracted_text || result.transcript || result.transcription || result.preview || "No content preview available."}
+              {result.extracted_text || result.transcription || result.transcript || result.preview || localTextFallback || "No content preview available."}
             </div>
           </div>
 
@@ -275,8 +289,8 @@ export const IngestionTab: React.FC<IngestionTabProps> = ({
             </p>
             <button
               onClick={() => {
-                const text = result.extracted_text || result.transcript || result.transcription || result.preview || "";
-                onSendToExtraction(text, result.title || "Ingested Document");
+                const text = result.extracted_text || result.transcription || result.transcript || result.preview || localTextFallback || "";
+                onSendToExtraction(text, result.title || file?.name || "Ingested Document");
               }}
               className="px-5 py-2.5 rounded-lg bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs sm:text-sm flex items-center gap-2 shadow-md shadow-blue-600/30"
             >

@@ -1,7 +1,7 @@
 import json
 import logging
 from typing import Optional, Any
-from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile, status
 from sqlalchemy.orm import Session
 
 # Optional DB dependency injection
@@ -84,6 +84,7 @@ def ingest_document_endpoint(
     source_type: IngestionSourceType = Form(IngestionSourceType.DOCUMENT),
     trigger_extraction: bool = Form(True, description="Forward extracted text to Module 2 if company_id provided"),
     metadata: Optional[str] = Form(None, description="Optional JSON string of extra metadata"),
+    request: Request = None,
     db: Optional[Session] = Depends(get_db)
 ):
     """
@@ -98,9 +99,11 @@ def ingest_document_endpoint(
     if len(content) == 0:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Uploaded file is empty (0 bytes).")
 
-    # Clean default Form values
-    c_id = _clean_form_str(company_id)
-    t_val = _clean_form_str(title)
+    # Clean default Form values or fallback to query params
+    req_c_id = request.query_params.get("company_id") if request is not None else None
+    req_title = request.query_params.get("title") if request is not None else None
+    c_id = _clean_form_str(company_id) or _clean_form_str(req_c_id) or "default-org"
+    t_val = _clean_form_str(title) or _clean_form_str(req_title)
     p_id = _clean_form_str(project_id)
     a_id = _clean_form_str(author_id)
     m_val = _clean_form_str(metadata)
@@ -146,6 +149,7 @@ def ingest_audio_endpoint(
     source_type: IngestionSourceType = Form(IngestionSourceType.VOICE_NOTE),
     trigger_extraction: bool = Form(True, description="Forward transcript to Module 2 if company_id provided"),
     metadata: Optional[str] = Form(None, description="Optional JSON string of extra metadata"),
+    request: Request = None,
     db: Optional[Session] = Depends(get_db)
 ):
     """
@@ -160,9 +164,11 @@ def ingest_audio_endpoint(
     if len(content) == 0:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Uploaded audio file is empty (0 bytes).")
 
-    # Clean default Form values
-    c_id = _clean_form_str(company_id)
-    t_val = _clean_form_str(title)
+    # Clean default Form values or fallback to query params
+    req_c_id = request.query_params.get("company_id") if request is not None else None
+    req_title = request.query_params.get("title") if request is not None else None
+    c_id = _clean_form_str(company_id) or _clean_form_str(req_c_id) or "default-org"
+    t_val = _clean_form_str(title) or _clean_form_str(req_title)
     p_id = _clean_form_str(project_id)
     a_id = _clean_form_str(author_id)
     l_val = _clean_form_str(language)

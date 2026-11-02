@@ -33,11 +33,23 @@ class RAGEngine:
         4. Grounded Context Construction
         5. LLM Answer Generation with Source Citations
         """
+        question_text = (req.question or req.query or "").strip()
+        if not question_text:
+            return RAGChatResponse(
+                question="",
+                answer="Please enter a question about your business memories or commitments.",
+                sources=[],
+                retrieved_memories_count=0,
+                is_grounded=False
+            )
+
+        company_id = req.company_id or "default-org"
+
         # Step 1 & 2: Vector Search scoped to company_id
         search_results = vector_search_engine.search(
             db=db,
-            query=req.question,
-            company_id=req.company_id,
+            query=question_text,
+            company_id=company_id,
             project_id=req.project_id,
             limit=req.limit,
             min_similarity=memory_config.SIMILARITY_THRESHOLD
@@ -49,7 +61,7 @@ class RAGEngine:
         # Step 3: If no relevant memories, state clearly that information could not be found
         if not search_results:
             return RAGChatResponse(
-                question=req.question,
+                question=question_text,
                 answer="I could not find any recorded business memories or discussions regarding this query for your company.",
                 sources=[],
                 retrieved_memories_count=0,
@@ -64,40 +76,53 @@ class RAGEngine:
             mem = res.memory
             s_title = mem.source_title or "Unspecified Source"
             s_type = mem.source_type or "document"
+            m_type = mem.memory_type or "general_info"
+
+            created_val = mem.created_at
+            if hasattr(created_val, "strftime"):
+                date_str = created_val.strftime('%Y-%m-%d %H:%M')
+            else:
+                date_str = str(created_val or "")
+
+            snippet = (mem.content[:200] + ("..." if len(mem.content) > 200 else "")) if mem.content else ""
 
             source_refs.append(
                 SourceReference(
-                    source_id=mem.source_id,
+                    source_id=mem.source_id or f"src-{mem.id}",
                     source_title=s_title,
                     source_type=s_type,
                     memory_id=mem.id,
                     memory_title=mem.title,
-                    memory_type=mem.memory_type,
-                    content_snippet=mem.content[:200] + ("..." if len(mem.content) > 200 else ""),
-                    timestamp=mem.created_at
+                    memory_type=m_type,
+                    content_snippet=snippet,
+                    timestamp=created_val if hasattr(created_val, "strftime") else None
                 )
             )
 
             context_blocks.append(
                 f"[Memory {idx}] (ID: {mem.id})\n"
                 f"Title: {mem.title}\n"
-                f"Type: {mem.memory_type.upper()}\n"
+                f"Type: {m_type.upper()}\n"
                 f"Status: {mem.status}\n"
                 f"Source: {s_title} ({s_type})\n"
                 f"Project: {mem.project_name or 'General'}\n"
-                f"Date: {mem.created_at.strftime('%Y-%m-%d %H:%M')}\n"
+                f"Date: {date_str}\n"
                 f"Content: {mem.content}\n"
                 + (f"Change Reason: {mem.change_reason}\n" if mem.change_reason else "")
             )
 
         context_str = "\n\n".join(context_blocks)
 
-        # Step 5: Generate LLM answer
-        answer = self._generate_llm_answer(question=req.question, context=context_str, source_refs=source_refs)
+        # Step 5: Generate LLM answer with fallback
+        try:
+            answer = self._generate_llm_answer(question=question_text, context=context_str, source_refs=source_refs)
+        except Exception as e:
+            logger.warning(f"LLM answer generation failed ({e}), using grounded synthesizer fallback.")
+            answer = self._synthesize_grounded_answer(question=question_text, context=context_str, source_refs=source_refs)
 
         return RAGChatResponse(
-            question=req.question,
-            answer=answer,
+            question=question_text,
+            answer=answer or "No answer could be generated from available records.",
             sources=source_refs,
             retrieved_memories_count=len(search_results),
             is_grounded=True

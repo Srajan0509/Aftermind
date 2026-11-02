@@ -1,7 +1,7 @@
 from datetime import datetime, timezone
 from enum import Enum
 from typing import Any, Dict, List, Optional
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 
 class IngestionSourceType(str, Enum):
@@ -73,15 +73,49 @@ class IngestionResponse(BaseModel):
     title: str
     source_type: str
     filename: Optional[str] = None
-    character_count: int
-    word_count: int
-    extracted_text: str
+    character_count: int = 0
+    char_count: Optional[int] = None
+    word_count: int = 0
+    extracted_text: str = ""
+    transcription: Optional[str] = None
+    transcript: Optional[str] = None
+    preview: Optional[str] = None
     persisted_to_storage: bool = False
     extraction_triggered: bool = False
     extraction_result: Optional[Dict[str, Any]] = None
     status: str = "completed"
     ingested_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     metadata: Dict[str, Any] = Field(default_factory=dict)
+
+    model_config = ConfigDict(extra="ignore")
+
+    @model_validator(mode="before")
+    @classmethod
+    def populate_aliases(cls, data: Any) -> Any:
+        if isinstance(data, dict):
+            text = (
+                data.get("extracted_text")
+                or data.get("transcription")
+                or data.get("transcript")
+                or data.get("preview")
+                or ""
+            )
+            data["extracted_text"] = text
+            data["transcription"] = text
+            data["transcript"] = text
+            data["preview"] = text[:1000] if text else ""
+
+            chars = data.get("character_count")
+            if chars is None:
+                chars = data.get("char_count")
+            if chars is None:
+                chars = len(text)
+            data["character_count"] = chars
+            data["char_count"] = chars
+
+            if "word_count" not in data or data["word_count"] is None:
+                data["word_count"] = len(text.split()) if text else 0
+        return data
 
 
 class IngestionHealthResponse(BaseModel):
